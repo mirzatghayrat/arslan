@@ -145,6 +145,9 @@ class GoalProgress(Contract):
     # L7-6: why it stopped short, and a blocked goal's one step for the user, for its card after a restart too.
     blocker: GoalBlocker | None = None
     step: Annotated[str, Field(max_length=300)] | None = None
+    # L7-5e: the checks the judge gave no verdict on when the goal stopped; they are the user's to confirm, as a
+    # check Arslan can't verify is (`turn_answer._goal_round`, `task_repository.accept_review`).
+    unjudged: tuple[Identifier, ...] = Field(default=(), max_length=CRITERIA_MAX)
 
 
 def acceptance(spec: GoalSpec) -> list[dict]:
@@ -222,9 +225,13 @@ def unverifiable(spec: GoalSpec) -> tuple[str, ...]:
     saved = {check.path for check in spec.checks if check.kind in {"file_saved", "file_contains"} and check.path}
 
     def readable_file(path: str) -> bool:
+        named = os.path.expanduser(path)
+        # L7-5e: a folder is never one file, also when the goal's own file_saved names it ("a table saved in this
+        # folder", T2 and T3 in the L7-7 bench): the judge could not read it in any round.
+        if named.endswith("/") or (os.path.isabs(named) and os.path.isdir(named)):
+            return False
         if path in saved:
             return True
-        named = os.path.expanduser(path)
         if os.path.isabs(named) and os.path.exists(named):
             return os.path.isfile(named)
         suffix = PurePath(named.rstrip("/")).suffix.lower()

@@ -173,6 +173,33 @@ async def test_a_goal_of_only_the_users_own_checks_runs_once_as_a_plain_job(exec
     assert (await _row(execution_db)).phase == "cancelled"
 
 
+async def test_a_goal_handed_to_a_plain_job_sends_no_card_that_says_the_user_stopped_it(execution_db, active, model,
+                                                                                        jobs):
+    """L7-5e (L7-7 bench, T1/T11): the hand-off closed the goal row as the user's own cancel, and the card the command
+    publishes then said "stopped" (user_cancelled) before the plain job's own result. No card of the row goes out;
+    the plain job's card is the only one. `/goal clear` still says the goal was cleared."""
+    model.draft = {"criteria": [{"description": "the user is happy", "kind": "judgement"}]}
+    await _say("/goal Make the user happy")
+    row = await _row(execution_db)
+    await _say("/goal start confirm")
+    closed = await _row(execution_db)
+    assert (closed.phase, closed.pause_reason) == ("cancelled", goal_command.RAN_ONCE)
+    sent: list[dict] = []
+    await goal_command.publish(CID, sent.append)
+    assert sent == []
+    assert not [frame for frame in sent if frame.get("job_id") == row.id]
+    assert len(jobs) == 1 and jobs[0].goal_spec is None
+
+
+async def test_a_cleared_goal_still_publishes_its_stopped_card(execution_db, active, model, jobs):
+    await _say(f"/goal {PROMPT}")
+    await _say("/goal clear")
+    sent: list[dict] = []
+    await goal_command.publish(CID, sent.append)
+    assert [(frame["phase"], frame["outcome"], frame["detail"]) for frame in sent] == [
+        ("finished", "stopped", "user_cancelled")]
+
+
 async def test_two_quick_starts_of_an_only_yours_goal_run_it_once(execution_db, active, model, jobs):
     model.draft = {"criteria": [{"description": "the user is happy", "kind": "judgement"}]}
     await _say("/goal Make the user happy")

@@ -234,6 +234,13 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
     before = runtime.progress.goal or goal_mode.GoalProgress(
         status="active", unmet=tuple(check.id for check in goal.checks if not check.user_confirmed))
     record = goal_mode.after_verdict(goal, before, met=met, measures=measures)
+    # L7-5e (L7-7 bench, T7/T10/T17): every check still unmet is one the judge gave no verdict on. More rounds of work
+    # can't change what the judge can see, so the goal ends now, those checks the user's to confirm, as a check
+    # Arslan can't verify is; never rounds of retried work and a no-progress block.
+    from server.services.task_validation import NO_VERDICT
+    if record.status in {"active", "blocked"} and record.unmet and all(
+            items.get(cid, {}).get("code") in NO_VERDICT for cid in record.unmet):
+        record = record.model_copy(update={"status": "review", "unjudged": record.unmet})
     # Wrap-up is finish mode or the budget's soft limit (`_step_notes`): no round past either, so the soft limit
     # stays where a goal stops and the 1.5x hard limit never becomes the real one.
     if record.status == "active" and (mode.forced or mode.finishing or state.budget.soft_reached()):
@@ -265,6 +272,11 @@ async def _goal_round(request: TurnRequest, state: TurnState, mode: StepMode, re
             return False, runtime_messages.render("goal_protected", locale, files=", ".join(host.changed)[:2000])
         if host.unprotected and all(check.id not in record.unmet for check in goal.checks):
             return False, runtime_messages.render("goal_unprotected", locale)
+        if record.unjudged:
+            return False, runtime_messages.render("goal_unjudged", locale, met=listed(met_ids), rest="; ".join(
+                f"{check.id}: {check.description}" + (f" ({items.get(check.id, {}).get('code')})"
+                                                      if check.id in record.unjudged else "")
+                for check in goal.checks if check.user_confirmed or check.id in record.unjudged)[:3000])
         return False, runtime_messages.render("goal_review", locale, met=listed(met_ids), rest="; ".join(
             f"{check.id}: {check.description}" for check in goal.checks if check.user_confirmed))
     if record.status == "budget_limited":

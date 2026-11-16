@@ -77,5 +77,12 @@ def test_a_home_file_without_an_extension_is_read_through_home(tmp_path, monkeyp
     assert goal_mode.unverifiable(_spec(_judged("~/TODO"))) == ()
 
 
+def test_t2_shape_a_folder_the_goals_own_file_saved_names_is_still_flagged(tmp_path):
+    # L7-7 bench, T2/T3: c1 "a table is saved in this folder" named the run folder, and so did the judgement check.
+    folder = str(tmp_path)
+    assert goal_mode.unverifiable(_spec(_judged(folder), saved=folder)) == ("c1",)
+    assert goal_mode.unverifiable(_spec(_judged("out/"), saved="out/")) == ("c1",)
+
+
 def test_a_name_ending_in_a_slash_is_a_folder_even_before_it_exists():
     assert goal_mode.unverifiable(_spec(_judged("exports.v2/"))) == ("c1",)

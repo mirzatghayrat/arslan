@@ -345,3 +345,111 @@ async def test_the_judge_gets_at_most_20000_characters_of_the_named_file(executi
                         description="The report explains every reconciled invoice"))
     result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: CLAIM)
     assert calls["judge"] and all("x" * 1000 in user and "TAIL-PAST-THE-CAP" not in user for user in calls["judge"])
+
+
+# -- L7-5e (L7-7 bench): a judge that gives no verdict ends the goal as the user's to confirm --------------------------
+
+def _judged(**kw) -> GoalCheck:
+    return _check(id="c2", kind="judgement", path="answer.txt", phrases=(), by_user=True,
+                  description="answer.txt holds the sum of every price in prices.txt", **kw)
+
+
+def _sum_goal() -> GoalSpec:
+    return _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged(),
+                 _check(id="c3", kind="file_contains", path="prices.txt", phrases=("PRICE-LIST",)))
+
+
+async def test_t17_shape_the_judge_also_reads_the_other_files_the_goal_names(execution_db, monkeypatch, tmp_path):
+    """T17: the criterion compares answer.txt with prices.txt, and the judge was shown answer.txt alone, so it could
+    only say null. It now gets the goal's other named files too, each labelled by its path."""
+    (tmp_path / "answer.txt").write_text("6655.83")
+    (tmp_path / "prices.txt").write_text("PRICE-LIST\n1.00\n2.00")
+    judge = lambda user: '{"passed": true}' if "PRICE-LIST" in user and "6655.83" in user else "null"  # noqa: E731
+    result, task, record, rounds, calls = await _goal_turn(_sum_goal(), monkeypatch, tmp_path, lambda n: "Summed.",
+                                                           judge=judge)
+    assert task.phase == "succeeded" and (record.status, record.round) == ("complete", 1)
+    assert "prices.txt\nPRICE-LIST" in calls["judge"][0]
+
+
+@pytest.mark.parametrize("reply,code", [
+    (lambda user: "null", "model_check_unjudgeable"),
+    (lambda user: '{"passed": null}', "model_check_unjudgeable"),
+    (lambda user: "I would say it looks fine.", "model_check_unparsed"),
+], ids=["null", "passed null", "prose"])
+async def test_a_judge_with_no_verdict_ends_the_goal_at_review_in_round_1_not_four_rounds(
+        reply, code, execution_db, monkeypatch, tmp_path):
+    (tmp_path / "answer.txt").write_text("6655.83")
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: "Summed.",
+                                                           judge=reply)
+    assert len(calls["turn"]) == 1 and rounds == 1 and calls["step"] == []
+    assert task.phase == "waiting_user" and task.pause_reason == "acceptance_review_required"
+    assert (record.status, record.unjudged, record.blocker.code) == ("review", ("c2",), "user_checks")
+    assert "couldn't check" in result["final"] and "c2: answer.txt holds the sum" in result["final"]
+    assert f"({code})" in result["final"]
+
+
+@pytest.mark.parametrize("raised,code", [(TimeoutError(), "model_check_timeout"), (OSError("down"), "model_check_error")],
+                         ids=["timeout", "error"])
+async def test_a_judge_request_that_fails_is_said_and_ends_the_goal_for_the_user(
+        raised, code, execution_db, monkeypatch, tmp_path):
+    (tmp_path / "answer.txt").write_text("6655.83")
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+
+    def judge(user):
+        raise raised
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: "Summed.",
+                                                           judge=judge)
+    assert (record.status, record.unjudged, rounds) == ("review", ("c2",), 1) and f"({code})" in result["final"]
+
+
+async def test_a_fenced_verdict_counts_in_a_goal(execution_db, monkeypatch, tmp_path):
+    (tmp_path / "answer.txt").write_text("6655.83")
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    result, task, record, rounds, calls = await _goal_turn(
+        goal, monkeypatch, tmp_path, lambda n: "Summed.", judge=lambda user: '```json\n{"passed": true}\n```')
+    assert task.phase == "succeeded" and record.status == "complete"
+
+
+async def test_with_a_check_of_arslans_still_unmet_the_rounds_go_on(execution_db, monkeypatch, tmp_path):
+    """Only when every unmet check is one the judge couldn't say: work can still meet a deterministic one."""
+    answer = tmp_path / "answer.txt"
+
+    def replies(n):
+        if n == 2:
+            answer.write_text("6655.83")
+        return "Summing."
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, replies,
+                                                           judge=lambda user: "null")
+    assert len(calls["turn"]) == 2 and (record.status, record.unjudged, rounds) == ("review", ("c2",), 2)
+
+
+async def test_the_user_can_accept_a_goal_whose_unjudged_checks_are_theirs(execution_db, monkeypatch, tmp_path):
+    (tmp_path / "answer.txt").write_text("6655.83")
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: "Summed.",
+                                                           judge=lambda user: "null")
+    async with repository() as repo:
+        accepted = await repo.accept_review(task.id, task.version)
+        row = await repo.get(task.id)
+    assert row.phase == "succeeded" and accepted
+
+
+async def test_a_judge_verdict_of_no_keeps_the_rounds_and_is_never_unjudged(execution_db, monkeypatch, tmp_path):
+    (tmp_path / "answer.txt").write_text("6655.83")
+    goal = _goal(_check(id="c1", kind="file_saved", path="answer.txt", phrases=()), _judged())
+    result, task, record, rounds, calls = await _goal_turn(goal, monkeypatch, tmp_path, lambda n: "Summed.",
+                                                           judge=lambda user: '{"passed": false}')
+    assert record.status == "blocked" and record.unjudged == () and rounds > 1
+
+
+def test_a_jobs_glances_hold_its_goals_unjudged_checks():
+    from types import SimpleNamespace
+    from server.services import background_jobs
+    job = SimpleNamespace(acceptance=[{"id": "mine", "evaluator": "human"}, {"id": "c2", "evaluator": "model"}],
+                          goal_progress=GoalProgress(status="review", unjudged=("c2",)))
+    assert background_jobs.job_glances(job) == {"mine", "c2"}
+    assert background_jobs.job_glances(SimpleNamespace(acceptance=job.acceptance, goal_progress=None)) == {"mine"}
+    assert background_jobs.outcome_of("waiting_user", {"answer-delivered": "passed", "c1": "passed", "c2": "not_run"},
+                                      "acceptance_review_required", glances=background_jobs.job_glances(job)) == "done"

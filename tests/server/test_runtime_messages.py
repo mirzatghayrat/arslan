@@ -38,7 +38,7 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                        "goal_blocked": {"round", "met", "unmet", "step"}, "goal_step": {"check"},   # L7-2
                        "goal_review": {"met", "rest"}, "goal_budget": {"met", "unmet"},
                        "goal_set": {"objective", "checks", "budget"}, "goal_flagged": {"checks"},   # L7-3
-                       "goal_runs_once": {"checks"},   # L7-5d
+                       "goal_runs_once": {"checks"}, "goal_unjudged": {"met", "rest"},   # L7-5d
                        "goal_started": {"objective"}, "goal_resumed": {"objective"}, "goal_complete": {"objective"},
                        "goal_bad_check": {"line"},   # L7-4: goal_resumed, goal_complete
                        "goal_protected": {"files"},   # L7-5

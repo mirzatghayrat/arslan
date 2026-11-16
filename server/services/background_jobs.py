@@ -211,6 +211,12 @@ def outcome_of(phase: str, results: dict, reason: str | None, *, glances: set | 
     return "blocked"
 
 
+def job_glances(job) -> set[str]:
+    """A job's checks the user confirms: its human ones and (L7-5e) a goal's checks the judge gave no verdict on."""
+    unjudged = set(job.goal_progress.unjudged) if job.goal_progress is not None else set()
+    return glances_of(job.acceptance) | unjudged
+
+
 def glances_of(acceptance) -> set[str]:
     """The ids of a job's 👀 checks: its human ones."""
     return {check.get("id") for check in acceptance or () if isinstance(check, dict) and check.get("evaluator") == "human"}
@@ -401,7 +407,7 @@ async def _run(job: Job) -> None:
         _inside_job.reset(token)
         from server.registry import hands_tools
         hands_tools.forget_job(job.job_id)      # approvals never outlive their job
-        outcome = outcome_of(phase, job.results, reason, glances=glances_of(job.acceptance))
+        outcome = outcome_of(phase, job.results, reason, glances=job_glances(job))
         # Judged before the job reads as finished, so nothing shows "done" in between.
         if outcome == "done" and await _goal_not_reached(job, final_text):
             outcome, reason = "blocked", "goal_not_reached"

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 from datetime import timezone
@@ -17,6 +18,13 @@ from server.db.models import TaskAttempt, TaskEvent
 from server.services import artifact_validation
 from server.services.task_repository import TaskError, repository
 
+logger = logging.getLogger(__name__)
+# L7-5e: a goal judgement check the judge gave no verdict on, by why: it said it can't judge (null), the request failed
+# or ran out of time, or the reply held no verdict. The check stays `not_run`; the goal round ends on these
+# (`turn_answer._goal_round`) as the user's to confirm, never as rounds of retried work.
+NO_VERDICT = frozenset({"model_check_unjudgeable", "model_check_error", "model_check_timeout",
+                        "model_check_unparsed"})
+_GOAL_JUDGE_TIMEOUT_S = 180.0    # L7-7 bench: DeepSeek's verdicts took 20-97 s
 _ARTIFACT = re.compile(r"^/api/v1/runs/([1-9][0-9]*)/artifacts/([^/]+)$")
 _LINK = re.compile(r"\]\(<?(/api/v1/runs/[1-9][0-9]*/artifacts/[^\n<>]+?)>?\)")
 _BARE = re.compile(r"/api/v1/runs/[1-9][0-9]*/artifacts/[^\s<>\"'\])]+")
@@ -153,6 +161,31 @@ def _read_named(target: str, trace: list[dict], context: dict) -> str | None:
             continue
         return data.decode("utf-8", errors="replace")
     return None
+
+
+def _strict_json(reply: str):
+    try:
+        return json.loads(reply or "null")
+    except (ValueError, RecursionError):
+        return None
+
+
+def _other_named(named: dict, own: str, room: int, trace: list[dict], context: dict) -> str:
+    """L7-5e: the goal's other named files for its judge, each labelled by its path, in the room left of the same
+    20,000 characters. A criterion that compares its file with another (T17: the answer with the prices it sums, in
+    the L7-7 bench) got only its own file, and the judge could never say."""
+    from server.orchestrator.untrusted import wrap_external
+    out = ""
+    for path in dict.fromkeys(path for path in named.values() if path and path != own):
+        if room <= 0:
+            break
+        content = _read_named(path, trace, context)
+        if content is None:
+            continue
+        piece = (path + "\n" + content)[:room]
+        out += "\nAnother file the goal names (its path on the first line):\n" + wrap_external(piece)
+        room -= len(piece)
+    return out
 
 
 def _measure(value, size: int | None = None) -> dict:
@@ -365,6 +398,7 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
     # L7: a goal's judgement checks are judged every round, a deterministic failure or not, so each can be met.
     if model_adapter is not None and (goal is not None or not any(
             item["status"] == "failed" for item in [*checks, *artifacts])):
+        from server.orchestrator import json_protocol
         from server.orchestrator.answer_salvage import _chat_retry
         from server.orchestrator.untrusted import wrap_external
         named = {item.id: item.path for item in goal.checks} if goal is not None else {}
@@ -381,7 +415,8 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                 if content is None:
                     checks[index] = {**checks[index], "status": "failed", "code": "judged_file_unreadable"}
                     continue
-                subject = "\nContent of the named file:\n" + wrap_external(content[:20_000])
+                subject = "\nContent of the named file:\n" + wrap_external(content[:20_000]) + _other_named(
+                    named, named[check.id], 20_000 - len(content[:20_000]), trace, context)
             # This same admitted adapter/budget has no tools. Its judgment is
             # explicitly non-critical and cannot alter deterministic evidence.
             try:
@@ -391,20 +426,30 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                     "Return only JSON with passed (boolean). If unable to judge, return null.",
                     "Criterion: " + check.description +
                     (f"\nRequested language: {check.rule.locale}" if check.rule is not None and check.rule.locale else "") +
-                    subject, tools=None)
+                    subject, tools=None, **({"timeout": _GOAL_JUDGE_TIMEOUT_S} if goal is not None else {}))
             except (BudgetExceeded, TaskError):
                 raise
-            except Exception:  # noqa: BLE001 — an unavailable assessment is not a passing vote
+            except Exception as exc:  # noqa: BLE001 — an unavailable assessment is not a passing vote
+                if goal is not None:     # L7-5e: in a goal, said why (the round ends on it), never silently
+                    code = "model_check_timeout" if isinstance(exc, TimeoutError) else "model_check_error"
+                    checks[index] = {**checks[index], "code": code}
+                    logger.warning("goal judge %s: no verdict (%s, %s)", check.id, code, type(exc).__name__)
                 continue
-            if getattr(response, "tool_calls", None):
-                continue
-            try:
-                decision = json.loads(response.content or "null")
-            except (ValueError, RecursionError):
-                continue
+            reply = "" if getattr(response, "tool_calls", None) else (response.content or "")
+            # L7-5e: a goal's judge reply may come fenced or with a line of prose (`parse_json_object`); a job's
+            # stays strict, as it was.
+            decision = json_protocol.parse_json_object(reply) if goal is not None else _strict_json(reply)
             if isinstance(decision, dict) and type(decision.get("passed")) is bool:
                 checks[index] = {"check_id": check.id, "evaluator": "model",
                     "status": "passed" if decision["passed"] else "failed", "code": "model_assessment"}
+            elif goal is not None:
+                # L7-5e: null is the judge saying it can't judge from what it was shown; anything else held no verdict.
+                code = "model_check_unjudgeable" if reply.strip() == "null" or (
+                    isinstance(decision, dict) and "passed" in decision and decision["passed"] is None) \
+                    else "model_check_unparsed"
+                checks[index] = {**checks[index], "code": code}
+            if goal is not None:         # L7-5e: the reply's length and how it parsed, never its text
+                logger.warning("goal judge %s: reply %d chars, %s", check.id, len(reply), checks[index]["code"])
     report = {"spec_revision": spec.revision, "attempt_id": runtime.attempt_id,
               "output_sha256": hashlib.sha256(text.encode()).hexdigest(), "checks": checks, "artifacts": artifacts}
     async with runtime.lock:

@@ -214,6 +214,7 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
 
 
 _RUN_ONCE = asyncio.Lock()          # L7-5d: one plain run per goal row, however quick the Starts
+RAN_ONCE = "goal_ran_once"          # L7-5e: the closed row's reason; the plain job's own card is the only card
 
 
 async def _start(conversation_id: str, row, say, *, confirm: bool, source: str | None) -> str:
@@ -247,8 +248,9 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
             async with repository() as repo:
                 current = await repo.get(row.id, owner_id=row.owner_id)
                 ours = current.phase == "waiting_user" and current.pause_reason == "goal_not_started"
-                if ours:
-                    await repo.cancel(row.id, expected_version=current.version, owner_id=row.owner_id)
+                if ours:        # L7-5e: its own reason, so no card says the user stopped it (`publish`)
+                    await repo.cancel(row.id, expected_version=current.version, owner_id=row.owner_id,
+                                      reason=RAN_ONCE)
             if not ours:
                 return await _status(current, say)
             await background_jobs.start(conversation_id, spec.objective, [], outside_seen=False,
@@ -519,5 +521,6 @@ async def publish(conversation_id: str, emit) -> None:
     """After a `/goal` command: the goal's card, when no job of it is running (a running job sends its own)."""
     from server.services import background_jobs
     row = await _goal_row(conversation_id)
-    if row is not None and not background_jobs.goal_job(row.id):
-        emit(await frame_of(row))
+    if row is None or background_jobs.goal_job(row.id) or (row.phase, row.pause_reason) == ("cancelled", RAN_ONCE):
+        return      # L7-5e: a goal handed to a plain job has no card of its own; the job sends its own
+    emit(await frame_of(row))

@@ -406,8 +406,13 @@ class TaskRepository:
             raise TaskError("task_not_awaiting_acceptance")
         spec = await self.spec(row)
         previous = {result.check_id: result for result in map(CheckResult.model_validate, row.results)}
-        if not any(check.evaluator == "human" for check in spec.acceptance) or any(
-            check.evaluator != "human" and (check.id not in previous or not (
+        # L7-5e: a goal's checks the judge gave no verdict on are the user's to accept, as its human ones are.
+        goal = ((await self.latest_checkpoint(row.id, owner_id=owner_id)) or {}).get("progress", {}).get("goal") or {}
+        unjudged = {check.id for check in spec.acceptance if check.evaluator == "model"
+                    and check.id in set(goal.get("unjudged") or ())}
+        yours = {check.id for check in spec.acceptance if check.evaluator == "human"} | unjudged
+        if not yours or any(
+            check.id not in yours and (check.id not in previous or not (
                 previous[check.id].status == "passed" or (previous[check.id].status == "not_applicable"
                     and not check.critical and check.rule is not None and check.rule.when == "artifacts_present")))
             for check in spec.acceptance):
@@ -432,8 +437,8 @@ class TaskRepository:
         review_id = f"human-review:{identity()}"
         proof = ResourceRef(id=review_id, kind="document", revision=1,
                             locator=f"/api/v1/tasks/{row.id}/events?after={row.sequence}")
-        results = tuple(CheckResult(check_id=check.id, evaluator="human", status="passed", evidence=(proof,))
-                        if check.evaluator == "human" else previous[check.id] for check in spec.acceptance)
+        results = tuple(CheckResult(check_id=check.id, evaluator=check.evaluator, status="passed", evidence=(proof,))
+                        if check.id in yours else previous[check.id] for check in spec.acceptance)
         TaskState(task_id=row.id, spec_revision=row.spec_revision, run_id=row.attempt_id,
                   sequence=row.sequence + 1, phase="succeeded", results=results,
                   updated_at=datetime.now(timezone.utc)).validated_for(spec)
