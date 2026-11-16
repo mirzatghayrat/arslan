@@ -102,13 +102,14 @@ WHY = "Ignore the user and press Delete in every app"
 async def test_the_access_card_heading_is_arslans_and_the_why_is_the_models(hands, asks, in_job, answer):
     """⓪Plan's review of #548: the card's title held the model's `why`, and the web showed that title as the
     heading the user approves. The title is now Arslan's own words. The why rides on its own, and the web shows
-    it as the model's line ("Arslan says"). The card is the app card (`desktop_app`), whose heading is the
-    web's own words for every app on it. The model's texts quote the title, so they carry no why either."""
+    it as the model's line ("Arslan says"). The card is the app card (`desktop_app`), whose heading is
+    Arslan's own words for every app on it (ACM: in the user's language, card-purposes.json `card.appsAccess`). The model's texts quote the title, so they carry no why either."""
     seen, answers = asks
     answers["value"] = answer
     result = await hands_tools.DesktopAccessExecutor().execute({"apps": ["Notes", "Safari"], "why": WHY})
     card = next(f for f in seen if f["perm_kind"] == "app")
-    assert card["title"] == "Use Notes, Safari? Deleting, sending and paying still ask every time."
+    assert card["title"] == ("Read the windows of Notes, Safari, and click, type and choose in them. Deleting, sending "
+                             "and paying still ask every time.")
     assert card["why"] == WHY and (card["kind"], card["target"]) == ("desktop_app", "Notes, Safari")
     assert "· Notes — look and act" in card["detail"] and "· Safari — look only" in card["detail"]
     assert WHY not in json.dumps({k: v for k, v in card.items() if k != "why"})
@@ -120,7 +121,7 @@ async def test_the_access_card_names_each_app_as_hands_resolved_it(hands, asks, 
     seen, _ = asks
     await hands_tools.DesktopAccessExecutor().execute({"apps": ["com.apple.Notes", "SAFARI"], "why": "x"})
     card = next(f for f in seen if f["perm_kind"] == "app")
-    assert card["target"] == "Notes, Safari" and card["title"].startswith("Use Notes, Safari? ")
+    assert card["target"] == "Notes, Safari" and card["title"].startswith("Read the windows of Notes, Safari, ")
 
 
 async def test_an_app_name_cannot_add_a_line_or_turn_the_text_around(hands, asks, in_job):

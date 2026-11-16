@@ -140,7 +140,7 @@ def _context():
 
 
 def _request(kind: str, target: str, title: str, detail: str, frame_kind: str, frame_target: str, *,
-             always_label: str = "", extra: dict | None = None):
+             always_label: str = "", extra: dict | None = None, model_title: str = ""):
     """A `permissions.Request` whose card keeps Hands' own frame kinds (desktop_app, desktop_risky,
     desktop_takeover, mac_shortcut, mac_script, browser_site), which the island and the phone
     already know; `perm_kind` on the card is the request's kind."""
@@ -149,41 +149,65 @@ def _request(kind: str, target: str, title: str, detail: str, frame_kind: str, f
     return permissions.Request(
         kind=kind, target=target, title=title[:300], detail=detail, always_label=always_label,
         frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, frame_target[:300], detail),
-        extra=extra or {})
+        extra=extra or {}, model_title=model_title[:300])
 
 
 async def _decide(kind: str, target: str, title: str, detail: str, frame_kind: str, frame_target: str, *,
-                  always_label: str = "", extra: dict | None = None):
+                  always_label: str = "", extra: dict | None = None, model_title: str = ""):
     """One card through `permissions.decide`: the money rung, an "Always" rule, a grant for this task
     or conversation, else the card on the surface bound to this turn or job."""
     from server.services import permissions
     return await permissions.decide(
-        _request(kind, target, title, detail, frame_kind, frame_target, always_label=always_label, extra=extra),
+        _request(kind, target, title, detail, frame_kind, frame_target, always_label=always_label, extra=extra,
+                 model_title=model_title),
         _context())
 
 
+#: ACM review round 1: how much of the apps' names the several-apps heading keeps, so its last sentence ("Deleting,
+#: sending and paying still ask every time.") fits the phone's heading (card_purpose.PHONE_MAX) in every language.
+_ACCESS_APPS_MAX = 60
+#: ACM: the Hands steps an app card's heading names (card-purposes.json `card.step_<op>`); `set_value` reads as typing.
+_STEP_HEADINGS = {"click": "click", "set_value": "type", "type": "type", "select": "select", "scroll": "scroll",
+                  "press": "press", "menu": "menu"}
+
+
+def _app_heading(lang: str, name: str, step: str = "", act: tuple[str, str] | None = None) -> str:
+    """ACM (P2, SMART-8): an app card's heading in `lang`: the first step and its element when the card is asked for
+    one (`act`: the op and its label), else opening the app or reading its window; each says that a yes lets Arslan
+    go on acting there."""
+    from server.services import card_purpose
+    op, label = act or ("", "")
+    if label and op in _STEP_HEADINGS:
+        shown = card_purpose.heading(f"step_{_STEP_HEADINGS[op]}", lang, label=label)
+        return card_purpose.heading("appAct", lang, app=name, step=shown)
+    return card_purpose.heading("appOpen" if step == "open" else "appLook", lang, app=name)
+
+
 def _app_request(app: dict, detail: str, *, step: str = "", frame_kind: str = "desktop_app",
-                 frame_target: str = ""):
+                 frame_target: str = "", act: tuple[str, str] | None = None, lang: str = "en"):
     """Looking at and acting in one app is one `app` request (0.1.61 §A11): kept by bundle id, else by the name
     Hands gave (`_target`: two names that read the same never share a grant or a rule, ⓪Plan's review of #565),
-    "for this task" first, "Always" unless the app reaches every other app."""
+    "for this task" first, "Always" unless the app reaches every other app. ACM: its heading names the step in the
+    user's language (`_app_heading`); the model's texts name it in English."""
     from server.services import hands_service, permissions
     from server.ws import protocol
     from server.services.hands_contract import shown_name
     bundle = _target(app)
     name = shown_name(app.get("name"), fallback=bundle)          # the card, "Always" and the ledger show it so
     return permissions.Request(
-        kind="app", target=bundle, title=f"Use {name}?", detail=detail,
+        kind="app", target=bundle, title=_app_heading(lang, name, step, act), detail=detail,
+        model_title=_app_heading("en", name, step, act),
         # Cleaned too: with neither a bundle id nor a visible name, `always_label` falls back to Hands' raw name.
         always_label=shown_name(hands_service.always_label(bundle, name)),
         frame=protocol.propose_action(uuid.uuid4().hex, frame_kind, (frame_target or name)[:300], detail),
         extra={"app": name, "bundle_id": bundle, **({"step": step[:200]} if step else {})})
 
 
-async def _decide_app(app: dict, detail: str, *, step: str = ""):
-    from server.services import hands_service, permissions
+async def _decide_app(app: dict, detail: str, *, step: str = "", act: tuple[str, str] | None = None):
+    from server.services import card_purpose, hands_service, permissions
     await hands_service.migrate_always()          # the old Settings list becomes `app` rules, once
-    return await permissions.decide(_app_request(app, detail, step=step), _context())
+    lang = await card_purpose.language()
+    return await permissions.decide(_app_request(app, detail, step=step, act=act, lang=lang), _context())
 
 
 def _no(decision, what: str) -> dict:
@@ -245,6 +269,38 @@ def _origin(url: str | None) -> str | None:
     return f"{parts.scheme}://{parts.hostname}" if parts.hostname else None
 
 
+async def _language() -> str:
+    """The user's language, for a card's heading (`card_purpose.language`)."""
+    from server.services import card_purpose
+    return await card_purpose.language()
+
+
+def _site_heading(lang: str, action: str, element: str, origin: str) -> str:
+    """ACM (P2, SMART-8): a site card's heading in `lang`: the action, its element (else "an element") and the
+    site, and that a yes lets Arslan go on acting there."""
+    from server.services import card_purpose
+    return card_purpose.heading(f"site_{action}", lang, origin=origin,
+                                element=element or card_purpose.heading("anElement", lang))
+
+
+#: ACM: an AppleScript card's heading by `hands_service.script_kind`'s own kind (before the every-script-asks gate
+#: rewrites `app` to `app_risky`), with the apps it names and without.
+_SCRIPT_HEADINGS = {"money": ("scriptMoney", "scriptMoneyNoApp"), "app_risky": ("scriptRisky", "scriptRiskyNoApp"),
+                    "app": ("scriptApps", "scriptNoApp"), "opaque": ("scriptApps", "scriptNoApp")}
+
+
+def _script_heading(lang: str, kind: str, apps: list[str]) -> str:
+    """ACM (P2, SMART-8): an AppleScript card's heading in `lang`, by `kind` as `hands_service.script_kind` read the
+    script: the apps it names as literal strings (an app chosen while it runs is refused before any card), that it
+    runs outside the sandbox, and, for `money`, that it may pay or move money, for `app_risky` (delete / send /
+    submit words, a step past the app, or an app that reaches every other one), that it may delete, send or run
+    commands. A kind it doesn't know is said as `app_risky`."""
+    from server.services import card_purpose
+    named = ", ".join(apps[:8])
+    with_apps, without = _SCRIPT_HEADINGS.get(kind, _SCRIPT_HEADINGS["app_risky"])
+    return card_purpose.heading(with_apps if named else without, lang, apps=named)
+
+
 # ── browser ──────────────────────────────────────────────────────────────────
 
 class _BrowserTool:
@@ -270,10 +326,12 @@ class _BrowserTool:
                                  "error": "Open a page with browser_open first."})
             summary = {"click": "click", "type": "type text", "select": "choose options",
                        "press": "press keys"}[self.action]
+            element = str(args.get("element") or args.get("key") or "")
             decision = await _decide(
-                "site", origin, f"Act on {origin}?",
-                f"Arslan wants to {summary} on {origin} ({args.get('element') or args.get('key') or ''})",
-                "browser_site", origin, always_label=origin, extra={"site": origin, "action": self.action})
+                "site", origin, _site_heading(await _language(), self.action, element, origin),
+                f"Arslan wants to {summary} on {origin} ({element})",
+                "browser_site", origin, always_label=origin, extra={"site": origin, "action": self.action},
+                model_title=_site_heading("en", self.action, element, origin))
             if not decision.allowed:
                 return _no(decision, "acting on this website")
         try:
@@ -458,10 +516,13 @@ class MacAppleScriptExecutor:
         # (C2c, ⓪Plan 2026-10-21): that split is what lifting the gate needs. Removed when the 0.1.61
         # every-script-asks gate lifts, by its own card, together with the island's `scriptAlsoHands`
         # text coming back (C2c deletes it from the web while no `app` script card can exist).
+        read_as = kind                      # ACM: the heading says what script_kind read, before the rewrite
         if kind == "app":
             kind = "app_risky"
-        decision = await _decide(kind, ", ".join(named) or "AppleScript", "Run this AppleScript?", script,
-                                 "mac_script", "AppleScript", extra={"apps": named[:8]})
+        decision = await _decide(kind, ", ".join(named) or "AppleScript",
+                                 _script_heading(await _language(), read_as, named), script,
+                                 "mac_script", "AppleScript", extra={"apps": named[:8]},
+                                 model_title=_script_heading("en", read_as, named))
         refused = None if decision.allowed else decision
         if refused is not None:
             return _no(refused, "this AppleScript")
@@ -1146,7 +1207,8 @@ class _DesktopAct:
         first = f"{verb} “{label or args.get('keys', '')}”"
         decision = await _decide_app(
             app, f"Arslan wants to use {app.get('name')} for this: read what is in its window, and click, type "
-                 f"and choose there. First: {first}. Deleting, sending and paying still ask every time.", step=first)
+                 f"and choose there. First: {first}. Deleting, sending and paying still ask every time.", step=first,
+            act=(self.op, str(label or args.get("keys") or "")))
         if not decision.allowed:
             _trace(self.op, app, "declined" if decision.by == "user" else decision.by, started)
             return _no(decision, f"acting in {app.get('name')}")
@@ -1545,14 +1607,17 @@ class DesktopAccessExecutor:
         # allows are left off it); one answer covers every app shown (0.1.61 §A11).
         await hands_service.migrate_always()
         shown = [hands_contract.shown_name(a["name"]) for a in found]      # never a line of its own
+        lang = await _language()
         requests = [_app_request(a, f"· {n} — {_TIER_WORDS.get(str(a.get('tier') or 'full'), 'look and act')}",
-                                 step="access") for a, n in zip(found, shown)]
+                                 step="access", lang=lang) for a, n in zip(found, shown)]
         # The title is Arslan's words; the model's why rides on its own and the card shows it as the model's
         # (⓪Plan's review of #548: it was in the title, which the web showed as the heading the user approves).
+        # ACM: in the user's language; the model's texts name it in English.
+        from server.services import card_purpose
+        apps = ", ".join(shown)[:_ACCESS_APPS_MAX]
         decisions = await permissions.decide_many(
-            requests, _context(), why=why[:150],
-            title=f"Use {', '.join(shown)[:100]}? Deleting, sending and paying still ask "
-                  "every time.")
+            requests, _context(), why=why[:150], title=card_purpose.heading("appsAccess", lang, apps=apps),
+            model_title=card_purpose.heading("appsAccess", "en", apps=apps))
         refused = next((d for d in decisions if not d.allowed), None)
         if refused is not None:
             return _no(refused, "these apps")

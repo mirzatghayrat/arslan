@@ -27,8 +27,14 @@ const GRANTS = new Set(["browser_site", "mac_script", "desktop_app", "desktop_ri
  * at an app and acting in it is ONE `desktop_app` card (③Hands moved onto permissions.decide), so
  * there is no `desktop_look` card: a frame of that kind would read as one this card has no words for.
  */
-/** Kinds whose frame title the server writes in the user's language (SMART-8: the command's plain purpose). */
-const LOCALIZED_TITLES = new Set(["network"]);
+/** Kinds whose frame title the server writes in the user's language (SMART-8: the command's plain purpose; ACM: an MCP
+ *  tool's, which says when the tool can delete or overwrite data). */
+const LOCALIZED_TITLES = new Set(["network", "mcp_tool"]);
+/** ACM (P2): the known kinds whose title the server writes in the user's language, naming the step, its target and what
+ *  a yes allows (card-purposes.json `card`), by the permission kinds that write it. Such a card heads with the title;
+ *  any other (an old frame with no title, a kind the server words otherwise) with the kind's own words. */
+const SERVER_HEADINGS: Record<string, readonly string[]> = { desktop_app: ["app"], browser_site: ["site"],
+  mac_script: ["app", "app_risky", "opaque", "money"] };
 
 export default function ActionApprovalCard({ kind, target, detail, expiresAt, options, alwaysLabel, title, why, permKind,
   background, subSession, busy, queue, onOpenContext, onConfirm, onCancel }: {
@@ -79,14 +85,18 @@ export default function ActionApprovalCard({ kind, target, detail, expiresAt, op
   // SBX-5b (SMART-8's shape): the purpose first (Arslan's line, else the card's own), then what it touches and the risk,
   // in the card's own words from the server's app name; the path (and command) folded, never cut.
   const appData = APP_DATA_KINDS.has(kind);
+  const serverHeading = known && permKind && SERVER_HEADINGS[kind]?.includes(permKind) ? frameTitle : "";
   const heading = appData ? (modelLine || t(`hands.appData.purpose_${kind}`, { app: target }))
-    : known ? t(`hands.title.${kind}`, { target }) : (modelLine || frameTitle || target);
+    : known ? (serverHeading || t(`hands.title.${kind}`, { target })) : (modelLine || frameTitle || target);
   // The model's line may frame the ask; it is never the only description of it (a prompt-injected model could word a
   // harmless-sounding one). So under it the card says what is being approved in the server's own words: the frame's
   // literal title, else the bare target. Not translated and not marked as the model's. Without a model line the title
   // (or the target) is the heading itself, and is not said twice.
   const subject = known || !modelLine ? "" : (frameTitle || target);
-  const detailLine = detail ? <p className="text-[13px] text-muted-foreground">{detail}</p> : null;
+  // ACM (P2): a run-later card's detail is the path and the text written, lines kept as they will be in the file.
+  const detailLine = !detail ? null : kind === "run_later"
+    ? <pre data-testid="action-run-later-text" className="whitespace-pre-wrap break-all font-mono text-[12px] text-muted-foreground">{detail}</pre>
+    : <p className="text-[13px] text-muted-foreground">{detail}</p>;
   // Allow is red for a step that pays or cannot be undone (plan R14: the kit's one RED_KINDS, shared with the command card).
   const red = kind === "desktop_risky" || RED_KINDS.has(permKind ?? "");
   return (

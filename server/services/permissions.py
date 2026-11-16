@@ -93,7 +93,7 @@ _ALWAYS_ASKS = frozenset({"outside"})
 # S4a (⓪Plan review, fix 5): kinds whose cards never join an identical ask (§A4's dedupe): each ask is its own
 # card, as before S4a. One click must not run the same remote command for two jobs.
 _NEVER_JOINED = frozenset({"outside", "remote",
-                           "run_later",    # HR-2a: one click is one write (the card doesn't show the content)
+                           "run_later",    # HR-2a: one click is one write (the card shows that write's content)
                            "app_data"})    # SBX-5b: one click is one call or one command
 # HR-1b: kinds a card offers for this conversation only (and no). The island never answers it (not one of its kinds).
 _CONVERSATION_ONLY = frozenset({"git_config"})
@@ -279,7 +279,8 @@ async def decide(req: Request, ctx: Context) -> Decision:
     return _done(await _ask(req, ctx, mode))
 
 
-async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str = "") -> list[Decision]:
+async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str = "",
+                      model_title: str = "") -> list[Decision]:
     """One card for several requests of one kind (Hands' DesktopAccess). Those already allowed
     are left off the card; one answer covers every one shown; decisions in input order.
 
@@ -287,7 +288,8 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str
     of them, and it offers the choices of their one kind. When their own cards share a kind (an app's),
     it is that kind of card, naming each request as its own card did, so a window says it in its own
     words; otherwise it is the generic card. `why` is the model's reason, which the card shows as the
-    model's words (`title` is Arslan's and never carries it). A list of mixed kinds is a caller bug, since a money step on an app's card would be
+    model's words (`title` is Arslan's and never carries it; `model_title`, as a Request's, is how the model's texts
+    name the card when not as `title` does: ACM, a heading in the user's language). A list of mixed kinds is a caller bug, since a money step on an app's card would be
     offered "this conversation": it raises ValueError, whatever the store holds — as does any
     request of a kind outside `KINDS`, before any of them is looked up."""
     _forget_last()
@@ -314,7 +316,7 @@ async def decide_many(reqs: list[Request], ctx: Context, *, title: str, why: str
         # The why goes only with a card that shows it as the model's line: the generic card has no words for
         # its kind, and the web would make the why its heading (⓪Plan's review of #554).
         combined = Request(
-            kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title,
+            kind=shown[0].kind, target="\x1e".join(r.target for r in shown), title=title, model_title=model_title,
             why=why if frame is not None else "",
             detail=detail, frame=frame,
             always_label=(", ".join(r.always_label for r in shown)

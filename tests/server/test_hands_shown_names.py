@@ -63,7 +63,8 @@ async def test_an_app_named_only_with_invisible_characters_is_named_by_its_bundl
     seen, _ = asks
     rename(hands, "\u200b\u202e")
     await hands_tools.DesktopLookExecutor().execute({"app": "com.apple.Notes"})
-    assert seen[0]["title"] == "Use com.apple.Notes?" and seen[0]["target"] == "com.apple.Notes"
+    assert seen[0]["title"] == "Read the window of com.apple.Notes, and click, type and choose in it"
+    assert seen[0]["target"] == "com.apple.Notes"
 
 
 @pytest.mark.parametrize("label", ["Del\u200bete", "De\u00adlete", "\uff24\uff45\uff4c\uff45\uff54\uff45", "S\u200bend",
@@ -122,7 +123,8 @@ async def test_two_apps_whose_names_read_the_same_never_share_a_grant_or_a_rule(
     hands.apps = list(NO_BUNDLE_IDS)
     for name in ("Notes", TWIN):
         assert (await hands_tools.DesktopLookExecutor().execute({"app": name}))["ok"]
-    assert [(frame["kind"], frame["title"]) for frame in seen] == [("desktop_app", "Use Notes?")] * 2
+    look = "Read the window of Notes, and click, type and choose in it"
+    assert [(frame["kind"], frame["title"]) for frame in seen] == [("desktop_app", look)] * 2
 
 
 async def test_a_look_at_the_twin_is_its_first_look(hands, asks, in_job):
@@ -161,7 +163,7 @@ async def test_the_access_card_leaves_out_an_app_with_no_visible_name(hands, ask
     result = await hands_tools.DesktopAccessExecutor().execute({"apps": [ghost, "Safari"], "why": "compare them"})
     assert result["ok"] and "Not included: an app with no visible name (no_visible_name)" in result["text"], result
     [card] = seen
-    assert card["target"] == "Safari" and card["title"].startswith("Use Safari? ")
+    assert card["target"] == "Safari" and card["title"].startswith("Read the windows of Safari, ")
     for key in ("title", "target", "detail", "always_label", "why"):
         assert plain(card.get(key, "")), (key, card.get(key))
 
