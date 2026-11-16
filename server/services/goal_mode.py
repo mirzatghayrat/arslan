@@ -212,19 +212,29 @@ def unverifiable(spec: GoalSpec) -> tuple[str, ...]:
     verify"). Verifiable: file saved or file contains with a path, sources read, the user's `check:` line, or a
     judgement over a file the user named (`by_user`: drafting never sets it, except for a path the user's own
     objective names). A check the user said they'll confirm themselves isn't flagged: it is theirs.
-    L7-5c: a judgement over a named FOLDER isn't verifiable either: the host's judge reads one file
-    (`task_validation._read_named`), so it would fail every round. Only an absolute path that is a folder now
-    counts; a relative name or a path not there yet is judged as before."""
+    L7-5c: a judgement is verifiable only over a target the host's judge can read as ONE file
+    (`task_validation._read_named`); over anything else it would fail every round. Readable: a file that is there,
+    a file the goal's own file_saved / file_contains names, or a name with a file extension (a file the host
+    resolves later against the readable folders). Not: a folder, an app bundle, or a bare name such as an app's
+    ('提醒事项', 'Reminders'). Pure on the path except one stat of an absolute (or ~) path."""
     import os
+    from pathlib import PurePath
+    saved = {check.path for check in spec.checks if check.kind in {"file_saved", "file_contains"} and check.path}
+
+    def readable_file(path: str) -> bool:
+        if path in saved:
+            return True
+        named = os.path.expanduser(path)
+        if os.path.isabs(named) and os.path.exists(named):
+            return os.path.isfile(named)
+        suffix = PurePath(named.rstrip("/")).suffix.lower()
+        return not named.endswith("/") and suffix not in {"", ".app"}
 
     def verifiable(check: GoalCheck) -> bool:
         if check.kind in {"file_saved", "file_contains"}:
             return check.path is not None
         if check.kind == "judgement":
-            if check.path is None or not check.by_user:
-                return False
-            named = os.path.expanduser(check.path)
-            return not (os.path.isabs(named) and os.path.isdir(named))
+            return check.path is not None and check.by_user and readable_file(check.path)
         return True                     # sources_read, check
     return tuple(check.id for check in spec.checks if not check.user_confirmed and not verifiable(check))
 
