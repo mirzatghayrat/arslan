@@ -3,13 +3,12 @@ boots and writes.
 
 Booted the way the app boots (storage_boot.initialize on build_engine, foreign keys on). The upgraded shape
 comes from the frozen pre-C7c-5b CREATE text (tests/server/pre_0103.py), since the models cannot make it any
-more. C7c-5c's migration then drops what an upgraded install keeps.
+more. Since C7c-5c the same boot runs 0103, which drops those tables (tests/server/test_migration_0103.py).
 """
 from __future__ import annotations
 
 import json
 
-import pytest
 import sqlalchemy as sa
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -25,7 +24,7 @@ REMOVED_MODELS = ("Spawn", "ChatMessage", "Feedback", "SpawnCapability", "SpawnP
 EXPERT_TABLES = {"spawns", "chat_messages", "feedback", "spawn_capabilities", "spawn_phases",
                  "conversation_spawns", "spawn_collections", "evolution_proposals", "synthetic_tasks",
                  "evolution_attempts", "persona_seeds"}
-# Made by old migrations on every install (0015, 0046) and naming no expert table; C7c-5c drops them.
+# Made by old migrations on every install (0015, 0046) and naming no expert table; 0103 drops them (C7c-5c).
 LEFT_FOR_0103 = {"persona_seeds_fts", "recipe_versions", "recipe_executions"}
 
 
@@ -94,10 +93,18 @@ async def test_a_new_install_builds_no_expert_table_and_nothing_names_spawns(tmp
     db = tmp_path / "arslan.db"
     await _boot(db)
     tables = _tables(db)
-    assert EXPERT_TABLES & tables == set()
-    assert LEFT_FOR_0103 <= tables
-    recipe_sql = dict(_rows(db, "SELECT name, sql FROM sqlite_master WHERE tbl_name LIKE 'recipe_%' AND sql IS NOT NULL"))
-    assert recipe_sql == RECIPE_SQL                   # 0046's inline DDL is what the models made, byte for byte
+    assert (EXPERT_TABLES | LEFT_FOR_0103) & tables == set()
+    # 0046's inline DDL is what the models made, byte for byte (0103 drops the tables in the same boot).
+    from server.db.migrations.versions import _0046_recipes
+    engine = sa.create_engine("sqlite://")
+    try:
+        with engine.begin() as conn:
+            _0046_recipes.upgrade_sync(conn)
+            recipe_sql = dict(conn.exec_driver_sql(
+                "SELECT name, sql FROM sqlite_master WHERE tbl_name LIKE 'recipe_%' AND sql IS NOT NULL").all())
+    finally:
+        engine.dispose()
+    assert recipe_sql == RECIPE_SQL
     # No table, index or trigger names `spawns`: a foreign key to a missing table refuses every write to its table.
     assert _rows(db, "SELECT type, name FROM sqlite_master WHERE sql LIKE '%spawns%'") == []
     assert {v for (v,) in _rows(db, "SELECT version FROM schema_version")} == {v for v, _ in runner.MIGRATIONS}
@@ -145,33 +152,26 @@ async def _pre_c7c5b_install(db_path, *, activated: bool) -> None:
 async def test_an_upgraded_install_boots_and_still_writes_with_spawn_id_null(tmp_path):
     db = tmp_path / "arslan.db"
     await _pre_c7c5b_install(db, activated=True)
-    before = _rows(db, "SELECT type, name, sql FROM sqlite_master ORDER BY type, name")
-    await _boot(db)
-    assert _rows(db, "SELECT type, name, sql FROM sqlite_master ORDER BY type, name") == before
     assert EXPERT_TABLES <= _tables(db)
+    await _boot(db)                                   # 0103 drops them and leaves the empty spawns(id) stub
+    assert _tables(db) & EXPERT_TABLES == {"spawns"}
     ids = await _write_one_of_each(db)
     assert _rows(db, "SELECT spawn_id FROM runs WHERE id=?", (ids["run"],)) == [(None,)]
     assert _rows(db, "SELECT spawn_id, target FROM scheduled_tasks WHERE id=?", (ids["task"],)) == [(None, "arslan")]
     assert _rows(db, "SELECT spawn_id FROM arslan_messages WHERE id=?", (ids["message"],)) == [(None,)]
-    assert _rows(db, "SELECT name FROM spawns") == [("Synthetic expert",)]
+    assert _rows(db, "SELECT count(*) FROM spawns") == [(0,)]
     assert _rows(db, "PRAGMA foreign_key_check") == []
 
 
 async def test_activating_an_upgraded_install_still_maps_the_expert_preferences(tmp_path):
-    """The read guards' other side: where `spawns` and `feedback` exist, activation reads them and guards
-    `spawns.memory_facts` exactly as before."""
+    """The read guards' other side: where `spawns` and `feedback` exist, the legacy mapping reads them (0103's
+    step 0, before it drops them); since C7c-5c the preference lands in global, quarantined. Activation then
+    puts no trigger on the stub, which has no memory_facts."""
     db = tmp_path / "arslan.db"
     await _pre_c7c5b_install(db, activated=False)
     await _boot(db)
     assert _rows(db, "SELECT phase FROM memory_store_state") == [("active",)]
-    assert _rows(db, "SELECT source_table, source_key FROM memory_legacy_map WHERE source_table='spawns'") == [
-        ("spawns", "3:0")]
-    triggers = {name for (name,) in _rows(db, "SELECT name FROM sqlite_master WHERE type='trigger' "
-                                              "AND tbl_name='spawns'")}
-    assert triggers == {"guard_legacy_spawn_preferences", "guard_new_spawn_preferences"}
-    engine = sa.create_engine(f"sqlite:///{db}")
-    try:
-        with pytest.raises(sa.exc.DBAPIError, match="legacy_memory_is_read_only"), engine.begin() as conn:
-            conn.exec_driver_sql("UPDATE spawns SET memory_facts='[\"changed\"]' WHERE id=3")
-    finally:
-        engine.dispose()
+    assert _rows(db, "SELECT m.source_table, m.source_key, e.scope_kind, e.status FROM memory_legacy_map m "
+                     "JOIN memory_entries e ON e.id = m.entry_id WHERE m.source_table='spawns'") == [
+        ("spawns", "3:0", "global", "quarantined")]
+    assert _rows(db, "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='spawns'") == []

@@ -19,6 +19,8 @@ from server.db.models import (MemoryDeletion, MemoryStoreState, MemoryEntry, Mem
 
 MAX_BYTES = 4 * 1024 * 1024
 MAX_ENTRIES = 10_000
+#: "expert" stays (C7c-5c): tombstones written before 0103 keep that scope, and a manifest holding them must
+#: still validate. 0103 writes none and moves the entries themselves to global, keeping their ids.
 _SCOPES = {"global", "project", "domain", "expert", "task"}
 
 
@@ -140,7 +142,9 @@ def reconcile_staged_sync(connection, payload: bytes) -> dict:
             if table in {"user_facts", "learnings"}:
                 target = "legacy_" + table if "legacy_" + table in tables else table
                 connection.execute(text(f"DELETE FROM {target} WHERE id=:id"), {"id": int(source_key)})
-            elif table == "spawns":
+            elif table == "spawns" and "memory_facts" in {
+                    row[1] for row in connection.exec_driver_sql("PRAGMA table_info(spawns)")}:
+                # C7c-5c: the column, not the table (0103 may leave an empty `spawns(id)` stub).
                 spawn_id, index = map(int, source_key.split(":"))
                 raw = connection.execute(text("SELECT memory_facts FROM spawns WHERE id=:id"), {"id": spawn_id}).scalar()
                 values = json.loads(raw) if isinstance(raw, str) else list(raw or [])

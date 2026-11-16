@@ -77,37 +77,6 @@ def test_migration_0056_hands_every_scheduled_task_to_arslan_and_keeps_the_rest(
 
 
 @pytest.mark.asyncio
-async def test_an_expert_becomes_a_skill_arslan_can_see_and_read(execution_db):
-    from server.db.models import SkillPack
-    from server.registry.executors import ReadSkillExecutor
-    from server.services import expert_conversion
-    prompt = "You research local speech models. Always compare WER and memory, cite the model card. " * 3
-    await _legacy_spawns(execution_db, {"id": 6, "name": "Research Analyst", "domain_category": "researcher",
-                                        "system_prompt": prompt})
-    assert await arslan._skill_index() == ""                  # no skills yet: nothing offered
-    assert [e["converted"] for e in await expert_conversion.list_experts()] == [False]
-    first = await expert_conversion.convert(6)
-    again = await expert_conversion.convert(6)
-    assert first["ok"] and again == {"ok": True, "key": first["key"], "already": True}
-    async with execution_db() as db:
-        pack = await db.get(SkillPack, first["key"])
-    assert pack.status == "registered" and "## Trigger" in pack.body and "compare WER" in pack.body
-    assert [e["converted"] for e in await expert_conversion.list_experts()] == [True]
-    index = await arslan._skill_index()
-    assert first["key"] in index and "Research Analyst" in index
-    read = await ReadSkillExecutor().execute({"key": first["key"]})
-    assert read["ok"] and "compare WER" in read["body"]
-
-
-@pytest.mark.asyncio
-async def test_converting_a_missing_or_empty_expert_says_why(execution_db):
-    from server.services import expert_conversion
-    await _legacy_spawns(execution_db, {"id": 7, "name": "Tiny", "domain_category": "x", "system_prompt": "hi"})
-    assert (await expert_conversion.convert(99))["code"] == "expert_not_found"
-    assert (await expert_conversion.convert(7)) == {"ok": False, "code": "expert_prompt_too_short"}   # no method to keep
-
-
-@pytest.mark.asyncio
 async def test_arslan_is_offered_read_skill_only_when_skills_exist(execution_db):
     from server.db.models import SkillPack
     keys = lambda tools: [t["key"] for t in tools]  # noqa: E731
@@ -130,25 +99,6 @@ def test_background_evolution_has_no_automatic_entry():
     for mod in ("evolution_watcher", "evolution_loop", "evolution_service",
                 "evolution_estimate"):
         assert importlib.util.find_spec(f"server.services.{mod}") is None, f"{mod} is back"
-
-
-@pytest.mark.asyncio
-async def test_former_experts_lists_only_experts_the_user_made(execution_db):
-    """0.1.48: the built-in examples were seeded on every install; they are not 'former experts'."""
-    from server.services import expert_conversion
-    await _legacy_spawns(execution_db,
-                         {"id": 1, "name": "Seeded example", "domain_category": "research", "system_prompt": "x",
-                          "is_default": 1},
-                         {"id": 2, "name": "My own", "domain_category": "writing", "system_prompt": "y"})
-    assert [e["name"] for e in await expert_conversion.list_experts()] == ["My own"]
-
-
-@pytest.mark.asyncio
-async def test_a_new_install_has_no_former_experts_to_convert(execution_db):
-    """C7c-5b: a new install has no `spawns` table at all; the converter finds nothing instead of failing."""
-    from server.services import expert_conversion
-    assert await expert_conversion.list_experts() == []
-    assert (await expert_conversion.convert(1))["code"] == "expert_not_found"
 
 
 def test_startup_no_longer_seeds_the_example_experts():

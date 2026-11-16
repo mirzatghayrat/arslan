@@ -151,7 +151,9 @@ class MemoryEntry(Base):
     __tablename__ = "memory_entries"
     __table_args__ = (
         CheckConstraint("kind IN ('preference','project_fact','style_rule','experience')", name="ck_memory_kind"),
-        CheckConstraint("scope_kind IN ('global','project','domain','expert','task')", name="ck_memory_scope"),
+        # No 'expert' since C7c-5c. An upgraded install keeps its old CHECK (no rebuild: memory_entries has
+        # NO ACTION children); 0103's memory_entries_scope_retired_* triggers refuse the scope there.
+        CheckConstraint("scope_kind IN ('global','project','domain','task')", name="ck_memory_scope"),
         CheckConstraint("(scope_kind = 'global' AND scope_id IS NULL) OR "
                         "(scope_kind != 'global' AND scope_id IS NOT NULL)", name="ck_memory_scope_id"),
         CheckConstraint("status IN ('proposed','active','paused','superseded','expired','deleted','quarantined')",

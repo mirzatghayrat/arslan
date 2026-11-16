@@ -117,6 +117,7 @@ from .versions._0097_scheduled_outside_seen import upgrade_sync as _m0097
 from .versions._0098_permission_modes import upgrade_sync as _m0098
 from .versions._0100_drop_task_workers import upgrade_sync as _m0100
 from .versions._0101_side_chats import upgrade_sync as _m0101
+from .versions._0103_retire_experts import upgrade_sync as _m0103
 
 # VERBATIM order from the old main.py boot chain — do NOT reorder/add/drop.
 MIGRATIONS: list[tuple[str, Callable]] = [
@@ -211,6 +212,8 @@ MIGRATIONS: list[tuple[str, Callable]] = [
     ("0098", _m0098),
     ("0100", _m0100),
     ("0101", _m0101),
+    # 0102 is another lane's: the runner applies ids not recorded, as a set (0073), so either merge order works.
+    ("0103", _m0103),
 ]
 
 

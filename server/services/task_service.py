@@ -1209,7 +1209,7 @@ async def progress_for_current(run_id: int | None = None) -> dict:
             text = run.final_output
             if text is None:
                 message = await repo.db.scalar(select(ArslanMessage).where(
-                    ArslanMessage.run_id == run.id, ArslanMessage.role.in_(("arslan", "spawn_summary")))
+                    ArslanMessage.run_id == run.id, ArslanMessage.role == "arslan")
                     .order_by(ArslanMessage.id.desc()).limit(1))
                 text = (message.display_content or message.content) if message else ""
             withheld = contains_credential(text or "")

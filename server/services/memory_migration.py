@@ -185,11 +185,16 @@ def migrate_legacy_sync(connection, *, fault_after: int | None = None) -> dict:
         provenance = _json(raw.get("source_ref"), {})
         has_source = bool(provenance)
         provenance["source_kind"] = raw.get("source_kind") or "unknown"
-        scoped = raw.get("spawn_id") is not None
         status = "superseded" if raw.get("superseded_by") is not None else ("proposed" if has_source else "quarantined")
+        if raw.get("spawn_id") is not None:
+            # C7c-5c (v0.1.64): the expert scope is retired (0103's trigger refuses it). A former expert's learning
+            # lands in global, held for review: no proposal is written here, so it waits as quarantined (a
+            # superseded one stays superseded, out of every context). Its spawn_id stays in the provenance.
+            provenance.setdefault("spawn_id", raw["spawn_id"])
+            if status != "superseded":
+                status = "quarantined"
         add("learnings", str(raw["id"]), raw, content=str(raw.get("content") or ""),
-            kind="experience", scope_kind="expert" if scoped else "global",
-            scope_id=str(raw["spawn_id"]) if scoped else None, provenance=provenance,
+            kind="experience", scope_kind="global", scope_id=None, provenance=provenance,
             sensitivity="unknown", status=status, author="assistant",
             valid_from=_time(raw.get("valid_from")), superseded_key=raw.get("superseded_by"))
 
@@ -200,7 +205,7 @@ def migrate_legacy_sync(connection, *, fault_after: int | None = None) -> dict:
             raw = {"spawn_id": row["id"], "index": index, "value": value, "created_at": row["created_at"]}
             add("spawns", f"{row['id']}:{index}", raw,
                 content=value if isinstance(value, str) else json.dumps(value, ensure_ascii=False),
-                kind="preference", scope_kind="expert", scope_id=str(row["id"]),
+                kind="preference", scope_kind="global", scope_id=None,    # C7c-5c: the expert scope is retired
                 provenance={"source_kind": "legacy_preference", "spawn_id": row["id"]},
                 sensitivity="unknown", status="quarantined", author="unknown")
 

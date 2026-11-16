@@ -18,7 +18,8 @@ class MemoryError(ValueError):
 
 
 class MemoryScope(Contract):
-    kind: Literal["global", "project", "domain", "expert", "task"]
+    # "expert" left with C7c-5c (v0.1.64): 0103 moved those entries to global and its trigger refuses the scope.
+    kind: Literal["global", "project", "domain", "task"]
     id: Identifier | None = None
 
     @model_validator(mode="after")
@@ -131,14 +132,9 @@ def decide_write(write: MemoryWrite, actor: MemoryActor) -> WriteDecision:
         raise MemoryError("credentials_not_memory")
     if write.scope.kind == "task":
         raise MemoryError("task_state_is_not_long_term_memory")
-    if write.scope.kind == "expert":
-        # C7c-4: no new writes into an expert's own memory, from anyone (the user's editor included). The
-        # entries already there are read and deleted as before until C7c-5's migration moves them to global
-        # (then the scope leaves the contract and ck_memory_scope). DELETE-BY: v0.1.64, with C7c-5.
-        raise MemoryError("memory_scope_denied")
     if actor.origin != "user":
         allowed = {
-            "project": actor.project_id, "domain": actor.domain_id, "expert": actor.expert_id,
+            "project": actor.project_id, "domain": actor.domain_id,
         }
         if write.scope.kind != "global" and write.scope.id != allowed.get(write.scope.kind):
             raise MemoryError("memory_scope_denied")

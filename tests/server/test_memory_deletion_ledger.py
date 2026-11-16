@@ -10,7 +10,6 @@ from arslan.companion.memory import MemoryActor, MemoryScope, MemoryWrite
 from server.services import memory_deletion_ledger as ledger
 from server.services.memory_deletion_manifest import decode, export_sync
 from server.services.memory_repository import repository
-from tests.server import pre_0103
 
 pytestmark = pytest.mark.skipif(os.name != "posix", reason="private ledger persistence currently requires POSIX")
 
@@ -195,31 +194,23 @@ async def test_status_detects_ahead_and_corrupt_records(execution_db):
 
 
 async def test_legacy_expert_preference_commit_also_updates_ledger(execution_db, monkeypatch):
-    # C7c-3b removed the spawn preferences route; an expert-scope entry is now deleted through the
-    # companion route, whose repository dependency syncs the ledger after the commit.
+    # C7c-3b removed the spawn preferences route; an entry mapped from an expert's preferences is deleted through
+    # the companion route, whose repository dependency syncs the ledger after the commit. Since C7c-5c (0103) the
+    # entry is global and `spawns` is at most an empty stub with no memory_facts: the legacy erase is a no-op.
     import httpx
     from fastapi import FastAPI
+    from sqlalchemy import text
 
     from server import auth
     from server.api.companion import router
-    from server.services.memory_activation import activate_sync
-    from server.services.memory_migration import migrate_legacy_sync
 
-    async with execution_db() as db:
-        await pre_0103.add_spawn(db, 3, "Synthetic expert", domain_category="content", system_prompt="Synthetic")
-        await db.commit()
-    async with execution_db.kw["bind"].begin() as connection:
-        await connection.run_sync(migrate_legacy_sync)
-        await connection.run_sync(activate_sync)
     content = "Synthetic expert preference"
     async with repository() as repo:
         entry = await repo.create(MemoryWrite(content=content, scope=MemoryScope(kind="global")), MemoryActor(origin="user"))
-    # C7c-4: no new expert-scope writes, so the leftover entry is put in that scope directly, as old data is.
-    from sqlalchemy import update
-
-    from server.db.models import MemoryEntry
     async with execution_db() as db:
-        await db.execute(update(MemoryEntry).where(MemoryEntry.id == entry["id"]).values(scope_kind="expert", scope_id="3"))
+        await db.execute(text("CREATE TABLE spawns (id INTEGER PRIMARY KEY)"))        # what 0103 may leave
+        await db.execute(text("UPDATE memory_legacy_map SET source_table='spawns', source_key='3:0', "
+                              "migration_note='needs_review' WHERE entry_id=:id"), {"id": entry["id"]})
         await db.commit()
     monkeypatch.setattr(auth, "active_token", lambda: "synthetic-ledger-token")
     app = FastAPI()
@@ -228,7 +219,7 @@ async def test_legacy_expert_preference_commit_also_updates_ledger(execution_db,
                                  headers={"Authorization": "Bearer synthetic-ledger-token"}) as api:
         deleted = await api.delete(f"/api/v1/memory/entries/{entry['id']}", params={"expected_version": 1})
         assert deleted.status_code == 200 and deleted.json()["status"] == "deleted"
-        remaining = (await api.get("/api/v1/memory/entries", params={"scope_kind": "expert", "scope_id": "3"})).json()
+        remaining = (await api.get("/api/v1/memory/entries")).json()
     assert [row for row in remaining if row["status"] == "active"] == []
     async with execution_db() as db:
         assert await ledger.status(db) == {"status": "current", "database_epoch": 1, "saved_epoch": 1}

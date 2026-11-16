@@ -306,6 +306,10 @@ class MemoryRepository:
         if (entry is None or entry.owner_id != actor.owner_id or entry.version != expected_version
                 or entry.status not in ("active", "proposed", "paused")):
             return None
+        if (entry.scope_kind, entry.scope_id) != (write.scope.kind, write.scope.id):
+            # C7c-5c guard (c): never fold a write into an entry of another scope, whoever matched them
+            # (memory_merge filters by scope; memory_tools_v2 and memory_compat build their own writes).
+            return None
         decision = decide_write(write, actor)
         if decision.confirmation_kind == "explicit_user_request":
             return None
@@ -378,6 +382,13 @@ class MemoryRepository:
             proposal_id = await self._proposal(entry, actor, write.model_dump(mode="json"))
             return {"proposal_id": proposal_id, "status": "proposed", "target_id": entry.id,
                     "target_version": entry.version}
+        dedup_key = self._dedup_key(write, actor.owner_id, digest)
+        if await self.db.scalar(select(MemoryEntry.id).where(
+                MemoryEntry.dedup_key == dedup_key, MemoryEntry.id != entry_id).limit(1)):
+            # Another entry already says these words in this scope (dedup_key is unique; deleted entries have
+            # none). C7c-5c review: accepting a moved expert entry whose words a global entry gained after 0103
+            # was an IntegrityError (a 500); it is a known refusal now, as for any edit onto another entry's words.
+            raise MemoryError("memory_already_stored")
         revision_id = _id()
         version = expected_version + 1
         now = datetime.utcnow()
@@ -386,7 +397,7 @@ class MemoryRepository:
             MemoryEntry.status != "deleted",
         ).values(
             current_revision_id=revision_id, version=version, kind=write.kind,
-            normalized_hash=digest, dedup_key=self._dedup_key(write, actor.owner_id, digest),
+            normalized_hash=digest, dedup_key=dedup_key,
             scope_kind=write.scope.kind, scope_id=write.scope.id,
             # #475 review, F3: only the user widens an entry's use (the automatic paths set it from the setting,
             # whatever the write says); its sensitivity already came in with the write (G1).
@@ -463,6 +474,10 @@ class MemoryRepository:
         if actor.origin != "user" or status not in {"active", "paused"}:
             raise MemoryError("user_confirmation_required")
         entry = await self.get(entry_id, owner_id=actor.owner_id)
+        if entry.scope_kind == "expert":
+            # C7c-5c guard (a): the expert scope is retired. 0103 moves every such entry to global and its trigger
+            # refuses the scope; this covers a row written around the trigger. DELETE-BY: with the 0103 trigger.
+            raise MemoryError("memory_scope_retired")
         if entry.status == "deleted":
             raise MemoryError("memory_deleted")
         if status == "active" and not entry.confirmation_kind:
@@ -690,7 +705,11 @@ class MemoryRepository:
                 {"name": "legacy_" + mapping.source_table}) else mapping.source_table
             await self.db.execute(text(f"DELETE FROM {table} WHERE id=:id"),
                                   {"id": int(mapping.source_key)})
-        elif mapping.source_table == "spawns":
+        elif mapping.source_table == "spawns" and "memory_facts" in {
+                row[1] for row in (await self.db.execute(text("PRAGMA table_info(spawns)"))).all()}:
+            # C7c-5c: 0103 drops `spawns` (an upgraded install may keep an empty `spawns(id)` stub). Checked by the
+            # column, not the table: the stub has no memory_facts. The pre-0103 upgrade backup still holds the
+            # value until it is pruned (the release note says so).
             spawn_id, index = map(int, mapping.source_key.split(":"))
             raw = await self.db.scalar(text("SELECT memory_facts FROM spawns WHERE id=:id"), {"id": spawn_id})
             values = json.loads(raw) if isinstance(raw, str) else list(raw or [])

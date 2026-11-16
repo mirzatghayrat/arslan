@@ -18,6 +18,27 @@ def contains_credential(content: str) -> bool:
     return any(pattern.search(normalized) for pattern in _SECRET_PATTERNS)
 
 
+REMOVED = "[secret removed]"
+#: A private key's whole block, not only the header line `_SECRET_PATTERNS` finds (to its end line, or the end).
+_PRIVATE_KEY_BLOCK = re.compile(r"-----BEGIN (?:[A-Z ]*PRIVATE KEY|OPENSSH PRIVATE KEY)-----.*?"
+                                r"(?:-----END (?:[A-Z ]*PRIVATE KEY|OPENSSH PRIVATE KEY)-----|\Z)", re.IGNORECASE | re.S)
+
+
+def without_credentials(content: str) -> str:
+    """`content` with each span `contains_credential` finds replaced by `REMOVED` (C7c-5c: a former expert's
+    prompt kept as a skill). The raw text first; where only the NFKC form still matches (full-width letters), that
+    form. The caller checks `contains_credential` on the result: this has the same limits as that screen."""
+    text = content
+    for _ in range(2):
+        text = _PRIVATE_KEY_BLOCK.sub(REMOVED, text)
+        for pattern in _SECRET_PATTERNS:
+            text = pattern.sub(REMOVED, text)
+        if not contains_credential(text):
+            break
+        text = unicodedata.normalize("NFKC", text)
+    return text
+
+
 def contains_credential_data(value: object) -> bool:
     """Screen structured arguments before execution; never log detected values. Screens raw values,
     never JSON-encoded text (D6: an encoded newline is a literal `\\n`, not whitespace, so a rule's value
