@@ -375,6 +375,7 @@ def run_prompt(item: dict, label: str, model: str, who: str = "arslan") -> dict:
 def run_all(who: str, label: str, repo: Path | None, out_dir: Path, model: str) -> Path:
     if not runner.ROUND:
         raise SystemExit("set BENCH_ROUND (one per round and model; labels must not be reused)")
+    runner.ensure_root()
     if who == "arslan":
         repo = repo.resolve()
         sty_read.preflight(repo, model)

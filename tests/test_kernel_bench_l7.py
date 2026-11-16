@@ -139,7 +139,7 @@ def test_t18_one_wrong_thing_in_the_ledger_is_not_complete(tmp_path, damage):
     elif damage == "cents":
         rows[3][3] = f"{Decimal(rows[3][3]) + Decimal('0.01'):.2f}"
     elif damage == "extra_cell":
-        rows[3] = [*rows[3], ""]                     # a row longer than the header: csv puts the rest under None
+        rows[3] = [*rows[3], "x"]                    # a row longer than the header: csv puts the rest under None
     elif damage == "extra_cell_total":
         # L7-7 ON rerun, T18 r1: the TOTAL row had 7 cells, its sum under stated_total; the checker crashed the arm
         rows[-1] = ["TOTAL", "", "", "", rows[-1][3], "", ""]
@@ -148,6 +148,14 @@ def test_t18_one_wrong_thing_in_the_ledger_is_not_complete(tmp_path, damage):
     _write_csv(tmp_path / "ledger.csv", rows)
     verdict = check_t18.check(str(tmp_path), params)
     assert verdict["score"] == 1, (damage, verdict)
+
+
+def test_t18_a_trailing_empty_cell_costs_nothing(tmp_path):
+    params = check_t18.fixture(str(tmp_path))
+    rows = _t18_ledger(tmp_path)
+    rows[3] = [*rows[3], ""]                         # "…,ok," : one empty cell past the header
+    _write_csv(tmp_path / "ledger.csv", rows)
+    assert check_t18.check(str(tmp_path), params)["score"] == 3
 
 
 def test_t18_no_ledger_or_a_changed_invoice_scores_zero(tmp_path):
@@ -1147,6 +1155,31 @@ def test_a_bench_root_where_arslan_asks_before_every_move_is_refused(root):
 @pytest.mark.parametrize("root", ["/Users/someone/Documents/aralem_dev/Arslan/bench-runs/l7-r2", "/tmp/arslan-kernel-bench"])
 def test_an_ordinary_bench_root_is_fine(root):
     assert runner.root_problem(Path(root)) is None
+
+
+def test_a_root_with_a_quote_in_its_name_is_still_judged():
+    assert "protected-write" in runner.root_problem(Path("/Users/someone/Library/Application Support/Claude/it's"))
+
+
+def test_a_root_that_resolves_into_a_protected_folder_is_refused(monkeypatch):
+    real = Path.resolve
+    hidden = Path("/Users/someone/Library/Application Support/Claude/bench")
+    monkeypatch.setattr(Path, "resolve", lambda self, *a, **k: hidden if self.name == "bench-link" else real(self))
+    assert "protected-write" in runner.root_problem(Path("/Users/someone/Documents/bench-link"))
+    assert runner.root_problem(Path("/Users/someone/Documents/bench-runs")) is None
+
+
+@pytest.mark.parametrize("entry", ["rerun", "smart_bench"])
+def test_every_path_that_runs_a_cell_refuses_a_protected_root(monkeypatch, entry):
+    from scripts.kernel_bench import rerun, smart_bench
+    monkeypatch.setenv("BENCH_ROOT", "/Users/someone/Library/Application Support/Claude/bench")
+    monkeypatch.setattr(runner, "sandbox_profile", lambda: "")
+    monkeypatch.setattr(runner, "ROUND", "r")
+    with pytest.raises(SystemExit, match="protected-write"):
+        if entry == "rerun":
+            rerun.main(["T9:arslan:1"])
+        else:
+            smart_bench.run_all("openclaw", "l", None, Path("/nonexistent"), "m")
 
 
 def test_t1_next_monday_said_on_a_sunday_accepts_both_mondays():

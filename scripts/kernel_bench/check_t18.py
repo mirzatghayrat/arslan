@@ -112,9 +112,11 @@ def check(run: str, params: dict) -> dict:
     with ledger.open(newline="", encoding="utf-8", errors="ignore") as f:
         read = list(csv.DictReader(f))
     # A row longer than the header keeps its extra cells under None, as a list (L7-7 ON rerun, T18 r1: a 7-cell TOTAL
-    # row crashed the checker and ended the arm). It is a wrong ledger, not a crash.
+    # row crashed the checker and ended the arm). It is dropped from the row, not a crash.
     rows = [{k.strip().lower(): (v or "").strip() for k, v in row.items() if k is not None} for row in read]
-    problems = [f"row {n} has more cells than the header" for n, row in enumerate(read, start=2) if None in row]
+    # A trailing empty cell (a row ending in a comma) costs nothing; a value past the header is a wrong ledger.
+    problems = [f"row {n} has more cells than the header" for n, row in enumerate(read, start=2)
+                if any(cell.strip() for cell in row.get(None) or ())]
     if not rows or not set(COLUMNS) <= set(rows[0]):
         return {"score": 1, "ledger": True, "invoices_changed": [], "problems": ["missing columns"]}
     body = [r for r in rows if r["invoice"].upper() != "TOTAL"]
