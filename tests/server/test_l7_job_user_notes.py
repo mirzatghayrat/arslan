@@ -15,6 +15,15 @@ NOTE = "别删，改成移到 workspace 里的 trash 文件夹"
 ANSWER = "按你的要求，我把 5 个 .bak 文件从 workspace 移到了 `workspace/trash` 文件夹，没删。未核对：没有执行删除，文件都还在。"
 
 
+@pytest.fixture(autouse=True)
+def forget_decisions():
+    """`_done` sets LAST_DECISION in the test's own context; a sync test runs in the shared one, so a later test's
+    `_declined` would read this file's note (#978 CI: test_ssh_gate saw "note 11"). The product calls _forget_last
+    before every decision, and each job or turn runs in its own task context."""
+    yield
+    permissions._forget_last()
+
+
 @pytest.fixture
 def job():
     job = background_jobs.Job(job_id="job-notes", conversation_id="c", goal="把 workspace 里所有的 .bak 文件清理掉。",
