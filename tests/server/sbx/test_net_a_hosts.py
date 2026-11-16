@@ -500,32 +500,43 @@ SCHEME_RUNS = {shape: (unit * 65536)[:65536] for shape, unit in
                {"dots": "a.", "hyphens": "a-", "pluses": "a+", "mixed": "a.b-c+", "urls": "a://b.cc "}.items()}
 
 
-def _best_of_three(read, text) -> float:
-    best = float("inf")
-    for _ in range(3):
-        net_policy._reset_for_tests()
-        started = time.perf_counter()
-        read(text)
-        best = min(best, time.perf_counter() - started)
-    return best
+#: The growth bound: reading 8 times the text may take at most this many times as long. A reading that grows with
+#: its text takes about 8 times (7.5-8.2 on a Mac here); one that grows with the square of it takes about 64 (the old
+#: typed reading of the "urls" run: 60).
+GROWTH_PARTS, GROWTH_BOUND = 8, 24
+
+
+def _growth(read, text) -> float:
+    """How many times longer reading `text` takes than reading its first eighth. A ratio, not a wall-clock bound, so
+    a loaded runner slows both readings alike (an absolute 0.5 s bound failed on CI at 0.57 s). Each reading is the
+    best of five, the two taken in turn, so a burst of load can't land on only one of them."""
+    small, large = text[: len(text) // GROWTH_PARTS], text
+    best = {small: float("inf"), large: float("inf")}
+    for _ in range(5):
+        for part in (small, large):
+            net_policy._reset_for_tests()
+            started = time.perf_counter()
+            read(part)
+            best[part] = min(best[part], time.perf_counter() - started)
+    return best[large] / best[small]
 
 
 @pytest.mark.parametrize("text", list(SCHEME_RUNS.values()), ids=list(SCHEME_RUNS))
 def test_a_long_run_of_scheme_characters_in_outside_content_is_read_in_a_bounded_time(text):
     """Before, a URL's scheme was tried from each letter of such a run, each try reading the rest of it: 65,536
     characters of a.a.a... took over five seconds to note on a Mac here, on every turn that read such a page. Now the
-    run is read once (milliseconds; the PR has the numbers). The bound, the best of three, is generous for slower
-    runners, and far below a reading that grows with the square of its text."""
-    best = _best_of_three(lambda page: net_policy.note_outside(CONV, page), text)
-    assert best < 0.5, (text[:12], best)
+    run is read once, so the time grows with the text, not with its square."""
+    growth = _growth(lambda page: net_policy.note_outside(CONV, page), text)
+    assert growth < GROWTH_BOUND, (text[:12], growth)
 
 
 @pytest.mark.parametrize("text", list(SCHEME_RUNS.values()), ids=list(SCHEME_RUNS))
 def test_a_long_run_of_scheme_characters_the_user_typed_is_read_in_a_bounded_time(text):
     """The same text typed (a paste): read where a host's beginning and end can be told (`_sites_named`). Before, each
-    name was checked against every URL's host, so a paste of many short URLs took seconds."""
-    best = _best_of_three(lambda page: net_policy._sites_named([page]), text)
-    assert best < 0.5, (text[:12], best)
+    name was checked against every URL's host, so a paste of many short URLs took seconds; now the time grows with
+    the text."""
+    growth = _growth(lambda page: net_policy._sites_named([page]), text)
+    assert growth < GROWTH_BOUND, (text[:12], growth)
 
 
 #: A scheme 1,000 characters long: no scheme is, but a URL's host after it is still read, whole. The second host has a

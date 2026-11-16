@@ -195,7 +195,9 @@ def _seatbelt_wrapper(profile: str | None = None) -> list[str] | None:
 # A backend answers two questions: is a real OS-level isolation mechanism available
 # here, and (if so) how do we wrap the child process to enforce it. run_python selects
 # one per run and FAILS CLOSED when none is available (unless the visible escape valve is
-# set). run_command already refuses on no-wrapper; this aligns run_python to the same bar.
+# set). This bar is stricter than run_command's: with no wrapper a command still runs, unsandboxed, after the
+# gate's card (with no card only under Full access; its result says sandbox: unavailable); only an offline
+# command, a sub-session's and a scheduled task's are refused there (terminal_exec, command_gate).
 
 class SandboxBackend:
     """Isolation mechanism interface. `available()` must be honest — return True only when
@@ -346,7 +348,7 @@ async def run_python(code: str, *, timeout_s: float = TIMEOUT_S,
 
     # Fail closed: if no real isolation backend is available (non-darwin until bubblewrap
     # lands, or a broken seatbelt), REFUSE — unless the deliberate, visible escape valve is
-    # set. This aligns run_python with run_command (the shell refused too, when it was sandboxed).
+    # set. Stricter than run_command, which runs unsandboxed after a card (see above).
     backend = _select_backend()
     if not backend.available():
         if not _unsandboxed_valve_open():
