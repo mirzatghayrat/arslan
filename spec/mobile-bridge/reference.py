@@ -301,13 +301,15 @@ BODY_FIELDS: dict[str, tuple[str, ...]] = {
     "chat.event": ("conversation_id", "kind", "message_id", "text", "final", "job_id?", "run_id?"),
     "job.event": ("id", "conversation_id", "state", "title", "current_step", "completed", "total", "plan",
                   "summary?", "files", "run_id?", "origin?", "criteria?"),
-    "approval.request": ("approval_id", "action", "target", "risk", "task_id", "task_title", "expires_at"),
+    "approval.request": ("approval_id", "action", "target", "risk", "task_id", "task_title", "expires_at",
+                         "perm_kind?", "phone_can_approve?", "source?", "abilities?", "checks?"),
     "approval.answer": ("approval_id", "decision", "auth", "ts"),
     "approval.result": ("approval_id", "outcome", "detail?"),
     "file.offer": ("id", "name", "size", "mime_type", "sha256"),
     "file.get": ("file_id",),
     "run.get": ("run_id",),
     "run.result": ("run_id", "conversation_id", "title", "state", "started_at", "duration_ms", "total", "steps", "files"),
+    "sub_session.history": ("conversation_id", "sub_session_id", "limit?"),    "sub_session.history.result": ("conversation_id", "sub_session_id", "messages", "truncated?", "view_only"),
     "task.start": ("goal", "criteria?", "client_task_id"),
     "task.started": ("conversation_id", "job_id", "client_task_id"),
     "task.stop": ("job_id", "conversation_id?"),
@@ -331,3 +333,34 @@ def check_body(envelope: dict) -> None:
         expected_auth = "faceid" if body["decision"] == "approve" else "none"
         if body["decision"] not in ("approve", "deny") or body["auth"] != expected_auth:
             raise BridgeError("malformed")
+    if envelope["type"] == "approval.request" and not _card_fields_fit(body):
+        raise BridgeError("malformed")
+    if envelope["type"] == "sub_session.history.result" and body["view_only"] is not True:
+        raise BridgeError("malformed")                     # §5.13: a sub-session is only ever read on the phone
+
+
+# §5.13: the Mac's guarantees for a capability card's optional fields. `checks[].result` is an open set: a receiver
+# keeps a value it doesn't know (pass, warn, fail and not_run are the named ones). `risk` stays one of the six.
+SOURCE_MAX, ABILITIES_MAX, ABILITY_MAX, DETAIL_MAX = 200, 8, 120, 160
+RISKS = {"write", "send", "delete", "install", "payment", "publish"}
+
+
+def _card_fields_fit(body: dict) -> bool:
+    abilities, checks = body.get("abilities", []), body.get("checks", [])
+    return (body["risk"] in RISKS and isinstance(body.get("phone_can_approve", False), bool)
+            and isinstance(body.get("source", ""), str) and len(body.get("source", "")) <= SOURCE_MAX
+            and isinstance(abilities, list) and len(abilities) <= ABILITIES_MAX
+            and all(isinstance(a, str) and len(a) <= ABILITY_MAX for a in abilities)
+            and isinstance(checks, list)
+            and all(isinstance(c, dict) and isinstance(c.get("name"), str) and isinstance(c.get("result"), str)
+                    and set(c) <= {"name", "result", "detail"} and len(c.get("detail", "")) <= DETAIL_MAX
+                    for c in checks))
+
+
+def phone_may_approve(body: dict) -> bool:
+    """§5.13: whether the phone offers a yes on this card (the Mac decides again). The Mac's `phone_can_approve` when
+    it is there; absent, a card whose `perm_kind` is `capability` is not approvable and any other is (as before). The
+    phone also ANDs `status.snapshot.high_risk_mac_only`, which the Mac folds into the field too."""
+    if "phone_can_approve" in body:
+        return body["phone_can_approve"] is True
+    return body.get("perm_kind") != "capability"

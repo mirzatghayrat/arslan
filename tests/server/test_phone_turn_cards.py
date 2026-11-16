@@ -220,7 +220,7 @@ async def test_the_first_answer_wins_even_when_both_arrive_before_the_turn_wakes
     run_registry.attach_sink("c", sent.append)
     try:
         pending = approvals.open_card("c", {"type": "propose_run_command", "call_id": "k"})
-        assert sent == [{"type": "propose_run_command", "call_id": "k"}]
+        assert sent == [{"type": "propose_run_command", "call_id": "k", "phone_can_approve": True}]     # CAP11
         assert approvals.answer({"type": "confirm_run_command", "call_id": "k", "remember": True})
         assert approvals.answer({"type": "cancel_run_command", "call_id": "k", "source": "phone"}), \
             "the late reply is still recognised (and swallowed), not reported as unknown"

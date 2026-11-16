@@ -91,11 +91,13 @@ describe("the support page and the Bridge protocol", () => {
     expect(spec).not.toContain("(5 min)");
   });
 
-  it("the protocol gives the risk words as built: perm_kind first, then the rules that were; a capability card never reaches the phone", () => {
+  it("the protocol gives the risk words as built: perm_kind first, then the rules that were; a capability card reaches the phone view-only", () => {
     const raw = repo("docs/specs/mobile-bridge-protocol.md");
     const spec = flowed(raw);
     expect(spec).toContain("`money` → `payment`, `send` → `send`, `destructive` → `delete`, `outside` → `install`; any other kind keeps the rules above.");
-    expect(spec).toContain("A `capability` card never reaches the phone.");
+    // CAP11a (#944): capability cards now reach the phone, view-only, as `install` (§5.13).
+    expect(spec).toContain("a `capability` card reaches the phone view-only, as `install` (§5.13).");
+    expect(spec).not.toContain("A `capability` card never reaches the phone.");
     // and the approval.request row says the same where the fields are listed
     const row = raw.split("\n").find((l) => l.startsWith("| `approval.request` |")) ?? "";
     expect(row).toContain("the card's `title` when it has one");
