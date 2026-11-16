@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from server.services import command_confirm, terminal_policy
+from server.services import command_confirm, hard_rules, permissions, terminal_policy
 from server.services.terminal_policy import HIDDEN_OPTION, UNREADABLE, ask_rules, assess
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +49,60 @@ ASKS = [
 # A program word with a path already asks as unreadable for that (the reader's own reason); the basename match is
 # pinned on the words directly below.
 
+REGRESSIONS = [
+    # R2: `--` is the preceding option's value, not the end of options.
+    "tar -f -- --to-command=true -x",
+    "tar -f -- -I true -x",
+    "tar --file -- --to-command=true -x",
+    "gtar -f -- -I true -x",
+    "tar xf -- --to-command=true",
+    "tar xbf 20 -- --to-command=true",                 # old-style values need not follow their own letter
+    'vim -i -- -c "echo hi" f.txt',
+    'emacs --directory -- --eval "true"',
+    "emacs --directory -- -l x.el",
+    "rsync --exclude -- -e true a b",
+    "rsync --exclude -- --rsync-path=true a b",
+    # R3: the editor resumes the cluster after a numeric count.
+    'vim -o2c "echo hi" f.txt',
+    'vim -O2c"echo hi" f.txt',
+    'vim -p2c "echo hi" f.txt',
+    'vim -w10c "echo hi" f.txt',
+    'nvim -o2c "echo hi" f.txt',
+    'ex -o2c "echo hi" f.txt',
+    # R4: emacsclient's unique one-letter long abbreviation.
+    'emacsclient --e "true"',
+    'emacsclient --e=true',
+    # R5: scripts, GUI initialization, remote commands, Lua, fallback commands and aliases.
+    "vim -s script.vim f.txt",
+    "vim -sscript.vim f.txt",
+    "gvim -U gui.vim",
+    "gvim -Ugui.vim",
+    "vim --remote-expr true",
+    "vim --remote-expr=true",
+    'vim --remote-send "<Esc>:echo hi<CR>"',
+    "nvim -l script.lua",
+    "nvimdiff -l script.lua",
+    "emacsclient --alternate-editor=true file",
+    "emacsclient --alternate-editor true file",
+    "emacsclient --a=true file",
+    "emacsclient -a /usr/bin/true file",
+    "emacsclient -a/usr/bin/true file",
+    'gvimdiff -c "echo hi" f.txt',
+    'gex -c "echo hi" f.txt',
+]
+
+TERMINATED = [
+    "tar -xf a.tar -- --to-command=true",
+    "rsync -- a -e true",
+    'vim -- -c "echo hi"',
+    "emacs -- --eval true",
+    "emacsclient -- --e true",
+    "nvim -- -l script.lua",
+    'gvimdiff -- -c "echo hi"',
+    'gex -- -c "echo hi"',
+    "tar -f -- -- --to-command=true",                 # consumed value, then a genuine terminator
+]
+
 RUNS = [
     "tar -xf a.tar",
     "tar -czf a.tar d",
@@ -67,12 +121,64 @@ RUNS = [
 
 
 @pytest.mark.parametrize("outside", [False, True])
-@pytest.mark.parametrize("command", ASKS)
+@pytest.mark.parametrize("command", ASKS + REGRESSIONS)
 def test_a_command_hidden_in_an_option_asks_and_never_forbids(command, outside):
     verdict = assess(command, outside=outside)
     assert (verdict.level, verdict.rule) == ("ask", UNREADABLE), command
     assert verdict.reason == HIDDEN_OPTION
     assert UNREADABLE in ask_rules(command, outside=outside)
+    # No prefilled rules: never_auto must discover the hidden command itself.
+    request = permissions.Request(kind="command", target="", title="Run?", detail=command)
+    assert hard_rules.never_auto(request) is True
+
+
+@pytest.mark.parametrize("command", TERMINATED)
+@pytest.mark.parametrize("outside", [False, True])
+def test_a_genuine_end_of_options_leaves_command_shaped_operands_alone(command, outside):
+    assert terminal_policy._option_command(terminal_policy._command_words(command)) == ""
+    assert assess(command, outside=outside).level == "run"
+    assert UNREADABLE not in ask_rules(command, outside=outside)
+
+
+@pytest.mark.parametrize("command", REGRESSIONS)
+@pytest.mark.parametrize("sandbox", [None, "outside"])
+async def test_full_access_still_shows_the_option_commands_card(command, sandbox, execution_db, monkeypatch):
+    from server.orchestrator import command_gate
+    from server.services import card_purpose, permission_store
+    from tests.server.test_s5a_permission_modes import Asker, _set
+
+    permissions._reset_for_tests()
+    permission_store._reset_for_tests()
+    await _set("option-command", "full_access")
+
+    async def folder():
+        return None
+
+    async def language():
+        return "en"
+
+    monkeypatch.setattr(command_gate, "run_folder", folder)
+    monkeypatch.setattr(card_purpose, "language", language)
+    asker = Asker()                                  # denies: no executor or payload is run
+    allowed = await command_confirm.Confirmations("option-command", asker=asker).command(command, [], sandbox=sandbox)
+    assert allowed is False
+    assert permissions.LAST_DECISION.get().by == "user"
+    [frame] = asker.frames
+    assert frame["rules"] == [UNREADABLE]
+    assert frame["unreadable"] == "option-command"
+    assert frame["perm_kind"] == ("outside" if sandbox else "command")
+
+
+async def test_a_hidden_option_intentionally_runs_offline_without_a_card_in_the_sandbox(monkeypatch):
+    from tests.server.test_s2a3_wire import _cards, _gate
+
+    asked = []
+    executor, result, steps = await _gate(
+        monkeypatch, {"command": "tar -xf a.tar --to-command=true"}, _cards(asked, False))
+    assert asked == []
+    assert executor.ran == [{"offline": True, "outside": False}]
+    assert result["offline_reason"] == UNREADABLE
+    assert steps[-1]["offline"] == UNREADABLE
 
 
 @pytest.mark.parametrize("command", RUNS)

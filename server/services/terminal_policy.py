@@ -1170,7 +1170,8 @@ def _hidden_code(texts: tuple[str, ...]) -> str:
 #: no card. Until Codex's payload reading reads the value itself (0.1.65; delete this table when it lands), the option
 #: alone asks as `unreadable`, inside the sandbox and outside, and never forbids. Long names also match GNU-style
 #: abbreviations (`--to-com`); short letters match inside a cluster (`-avze`).
-_VIM = ("vi", "vim", "nvim", "vimdiff", "nvimdiff", "view", "rview", "rvim", "gvim", "gview", "mvim", "evim", "ex")
+_VIM = ("vi", "vim", "nvim", "vimdiff", "nvimdiff", "view", "rview", "rvim", "gvim", "gview", "mvim", "evim", "ex",
+        "gvimdiff", "gex")
 _OPTION_COMMANDS: dict[str, tuple[tuple[str, ...], str]] = {
     "tar": (("to-command", "use-compress-program", "checkpoint-action", "info-script", "new-volume-script",
              "rsh-command", "rmt-command"), "IF"),
@@ -1178,8 +1179,9 @@ _OPTION_COMMANDS: dict[str, tuple[tuple[str, ...], str]] = {
               "rsh-command", "rmt-command"), "IF"),
     "rsync": (("rsh", "rsync-path"), "e"),
     "emacs": (("eval", "execute", "load", "funcall", "script"), "lfx"),
-    "emacsclient": (("eval",), "e"),
-    **{name: (("cmd",), "cSu") for name in _VIM},
+    "emacsclient": (("eval", "alternate-editor"), "ea"),
+    **{name: (("cmd", "remote-expr", "remote-send"), "cSusU" + ("l" if name in ("nvim", "nvimdiff") else ""))
+       for name in _VIM},
 }
 #: Real options that are also a prefix of a command option's name (`--checkpoint` alone runs nothing).
 _OPTION_COMMAND_EXACT = frozenset({"checkpoint"})
@@ -1196,11 +1198,17 @@ def _option_command(commands: tuple[tuple[str, ...], ...]) -> str:
             continue
         longs, shorts = _OPTION_COMMANDS[program]
         args = words[1:]
-        if program in ("tar", "gtar") and args and re.fullmatch(r"[A-Za-z]+", args[0]) \
-                and set(args[0]) & set(shorts):
+        old_tar = program in ("tar", "gtar") and args and re.fullmatch(r"[A-Za-z]+", args[0])
+        if old_tar and set(args[0]) & set(shorts):
             return HIDDEN_OPTION                # old-style bundled letters (`tar xIf …`)
-        for word in args:
+        for index, word in enumerate(args):
             if word == "--":
+                # A required option value can itself be `--`. Without a complete arity table, conservatively
+                # keep scanning after any option-shaped predecessor. Traditional tar bundles can consume several
+                # later values, so their `--` is ambiguous too. False positives stay for payload reading to fix.
+                previous = args[index - 1] if index else ""
+                if old_tar or (previous.startswith("-") and previous != "--"):
+                    continue
                 break
             if program in _VIM and word.startswith("+") and not re.fullmatch(r"\+\d*", word):
                 return HIDDEN_OPTION            # `+cmd` runs an Ex command; `+` and `+N` only move the cursor
@@ -1208,11 +1216,13 @@ def _option_command(commands: tuple[tuple[str, ...], ...]) -> str:
             single = program == "emacs" and word.startswith("-") and not word.startswith("--")
             if word.startswith("--") or single:
                 name = word.lstrip("-").split("=", 1)[0].lower()
-                if len(name) >= 2 and name not in _OPTION_COMMAND_EXACT and any(n.startswith(name) for n in longs):
+                minimum = 1 if program == "emacsclient" else 2  # getopt_long_only accepts unique `--e` / `--a`
+                if len(name) >= minimum and name not in _OPTION_COMMAND_EXACT and any(n.startswith(name) for n in longs):
                     return HIDDEN_OPTION
+            letters = r"[A-Za-z0-9]*" if program in _VIM else r"[A-Za-z]*"
             if word.startswith("-") and not word.startswith("--") \
-                    and set(re.match(r"[A-Za-z]*", word[1:]).group()) & set(shorts):
-                return HIDDEN_OPTION            # the letters up to the first non-letter: a cluster, or `-Ivalue`
+                    and set(re.match(letters, word[1:]).group()) & set(shorts):
+                return HIDDEN_OPTION            # editor count digits do not end a cluster (`-o2c`)
     return ""
 
 
