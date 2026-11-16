@@ -154,3 +154,56 @@ def test_a_full_folder_or_many_folders_are_not_read(tmp_path, monkeypatch):
     assert move_report._listing(tmp_path.resolve(), (tmp_path / "t").resolve()) is None
     command = " && ".join(f"mv a d{i}/" for i in range(9))
     assert len(move_report.destinations(command, tmp_path)) == move_report.FOLDERS_MAX
+
+
+
+# -- #982 review round 2: never a folder the sandbox closes ---------------------------------------------------------
+
+async def test_a_closed_folder_inside_the_working_folder_is_never_listed(work, monkeypatch):
+    # The workspace is the home folder and Downloads is Off: `mv nope Downloads/` must not list Downloads.
+    from server.services import workspace_paths
+    downloads = work / "Downloads"
+    downloads.mkdir()
+    (downloads / "old.pdf").write_text("x")
+    monkeypatch.setattr(workspace_paths, "green_roots", lambda: [downloads])
+    from server.services import settings_service
+
+    async def closed_reads(*a, **k):
+        return False
+    monkeypatch.setattr(settings_service, "default_read_enabled", closed_reads, raising=False)
+    from server.services import move_report
+    seen = []
+    real = move_report._listing
+    monkeypatch.setattr(move_report, "_listing", lambda root, folder: seen.append(folder) or real(root, folder))
+    await run({"command": f"cd '{work}' && touch new.pdf && mv nope.bak Downloads/; mv new.pdf Downloads/"})
+    assert downloads.resolve() not in seen
+
+
+def test_snapshot_skips_a_destination_at_or_under_a_denied_folder(tmp_path):
+    from server.services import move_report
+    for name in ("Downloads/sub", "ok"):
+        (tmp_path / name).mkdir(parents=True)
+    command = "mv a Downloads/ && mv b Downloads/sub/ && mv c ok/"
+    before = move_report.snapshot(command, tmp_path, denied=[tmp_path / "Downloads"])
+    assert [folder for folder, _, _ in before["moves"]] == [(tmp_path / "ok").resolve()]
+    assert len(move_report.snapshot(command, tmp_path)["moves"]) == 3
+
+
+def test_a_glob_outside_the_working_folder_is_never_expanded(tmp_path, monkeypatch):
+    from server.services import move_report
+    (tmp_path / "w").mkdir()
+    expanded = []
+    real = move_report.glob.iglob
+    monkeypatch.setattr(move_report.glob, "iglob", lambda pattern, **k: expanded.append(pattern) or real(pattern))
+    move_report.snapshot("mv /usr/lib/*.dylib ../w/x*.txt t/", tmp_path / "w")
+    move_report.snapshot("mv x*.txt t/", tmp_path / "w")
+    assert expanded == [str(tmp_path / "w" / "x*.txt")] * 2          # `../w/x*.txt` is inside, normalized
+
+
+def test_a_glob_is_expanded_only_so_far(tmp_path, monkeypatch):
+    from server.services import move_report
+    monkeypatch.setattr(move_report, "GLOB_MAX", 3)
+    for i in range(10):
+        (tmp_path / f"f{i}.txt").write_text("x")
+    move = move_report.Move(tmp_path / "t", ["f*.txt"], tmp_path.resolve())
+    assert len(move_report._identities(move, tmp_path.resolve())) == 3

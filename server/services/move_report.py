@@ -10,12 +10,16 @@ Read, never guessed, and never more than the command's own working folder:
 - the folder is reached from the working folder one name at a time without following a symlink (#982 review: a
   symlink the command itself made, `ln -s ~/.ssh trash`, must not make this server list ~/.ssh);
 - a folder that is one of the move's own sources afterwards (a rename, `mv src backup`) reports nothing;
+- never a folder the command's sandbox closes to reads, at or under it (#982 review round 2): the closed Desktop,
+  Documents and Downloads, Arslan's own and the user's secret paths, other apps' data. The server runs outside the
+  sandbox, so it must refuse what the sandbox would;
 - what it says is what is true: the entries new in that folder after the command. Anything else that wrote there
   meanwhile counts too, and a file that replaced one of the same name does not.
 """
 from __future__ import annotations
 
 import glob
+import itertools
 import os
 import shlex
 from dataclasses import dataclass, field
@@ -24,6 +28,7 @@ from pathlib import Path
 LISTED = 10                  # names shown; the count is always whole
 FOLDER_MAX = 10_000          # a folder with more entries isn't listed
 FOLDERS_MAX = 4              # destination folders read per command
+GLOB_MAX = 1_000             # a glob source's matches looked at, to tell a rename
 _SEPARATORS = {"&&", "||", ";", "|", "&", "+"}
 _LAUNCHERS = {"-exec", "-execdir", "-ok", "-okdir", "xargs"}
 _UNSAFE = set("$`*?[{")
@@ -136,14 +141,21 @@ def _listing(root: Path, folder: Path) -> tuple[set[str], tuple[int, int]] | Non
         os.close(fd)
 
 
-def _identities(move: Move) -> set[tuple[int, int]]:
-    """(device, inode) of each source as written, globs expanded here only to tell a rename afterwards."""
+def _identities(move: Move, root: Path) -> set[tuple[int, int]]:
+    """(device, inode) of each source as written, to tell a rename afterwards. A glob is expanded here only inside the
+    working folder, and only its first GLOB_MAX matches."""
     out = set()
     for source in move.sources:
         if "$" in source or "`" in source:
             continue
-        path = str(move.here / os.path.expanduser(source))
-        for name in (glob.glob(path) if set(source) & _GLOB else [path]):
+        path = os.path.normpath(move.here / os.path.expanduser(source))
+        if set(source) & _GLOB:
+            if root not in Path(path).parents:
+                continue
+            names = itertools.islice(glob.iglob(path), GLOB_MAX)
+        else:
+            names = [path]
+        for name in names:
             try:
                 stat = os.lstat(name)
             except OSError:
@@ -152,11 +164,23 @@ def _identities(move: Move) -> set[tuple[int, int]]:
     return out
 
 
-def snapshot(command: str, cwd: Path) -> dict:
-    """Before the run: each destination's listing and the identities of its sources."""
+def _closed(folder: Path, denied) -> bool:
+    for path in denied:
+        try:
+            closed = Path(path).resolve()
+        except (OSError, RuntimeError):
+            return True                          # can't tell: treat it as closed
+        if folder == closed or closed in folder.parents:
+            return True
+    return False
+
+
+def snapshot(command: str, cwd: Path, denied=()) -> dict:
+    """Before the run: each destination's listing and the identities of its sources. `denied`: the folders the
+    command's sandbox closes to reads; a destination at or under one is never listed."""
     root = cwd.resolve()
-    return {"root": root, "moves": [(move.folder, _listing(root, move.folder), _identities(move))
-                                    for move in moves(command, cwd)]}
+    return {"root": root, "moves": [(move.folder, _listing(root, move.folder), _identities(move, root))
+                                    for move in moves(command, cwd) if not _closed(move.folder, denied)]}
 
 
 def _shown(text: str) -> str:

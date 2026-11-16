@@ -985,7 +985,10 @@ class RunCommandExecutor:
         from server.services import move_report, tool_outputs
         import asyncio
         # what is new in a folder an `mv` names, read from the folder (L7-7 T11); never a folder outside `cwd`
-        before = await asyncio.to_thread(move_report.snapshot, command, cwd) if "mv" in command else {}
+        # never a folder the sandbox closes to reads (#982 review round 2): this server runs outside it
+        from server.services import command_sandbox
+        denied = [*closed, *command_sandbox.default_protected(), *command_sandbox.app_data()]
+        before = await asyncio.to_thread(move_report.snapshot, command, cwd, denied) if "mv" in command else {}
         result = await terminal_exec.run(command, cwd=cwd, timeout_s=limit,
                                          offline=terminal_exec.OFFLINE.get(),
                                          sandbox=in_sub or terminal_exec.SANDBOX_ONLY.get()
