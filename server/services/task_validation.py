@@ -173,16 +173,19 @@ def _strict_json(reply: str):
 def _other_named(named: dict, own: str, room: int, trace: list[dict], context: dict) -> str:
     """L7-5e: the goal's other named files for its judge, each labelled by its path, in the room left of the same
     20,000 characters. A criterion that compares its file with another (T17: the answer with the prices it sums, in
-    the L7-7 bench) got only its own file, and the judge could never say."""
+    the L7-7 bench) got only its own file, and the judge could never say.
+
+    Bounds (⓪Plan, 11-16): only the paths the goal's own checks name, files only (never a folder, its listing or
+    anything under it); each read as the named file is (`_read_named`: the readable folders, hidden and secret names
+    refused); one the host refuses is labelled not readable, never read another way; all inside the untrusted-data
+    markers, so a file's text is data the judge assesses, never its verdict."""
     from server.orchestrator.untrusted import wrap_external
     out = ""
     for path in dict.fromkeys(path for path in named.values() if path and path != own):
         if room <= 0:
             break
-        content = _read_named(path, trace, context)
-        if content is None:
-            continue
-        piece = (path + "\n" + content)[:room]
+        content = _read_named(path, trace, context)       # a folder is refused there: not a file
+        piece = (path + "\n" + (content if content is not None else "(not readable)"))[:room]
         out += "\nAnother file the goal names (its path on the first line):\n" + wrap_external(piece)
         room -= len(piece)
     return out
