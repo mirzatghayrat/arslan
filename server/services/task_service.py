@@ -480,12 +480,107 @@ def _apple_events_refused(arguments: dict, result: dict) -> bool:
                                                      minimal_profile=result.get("sandbox") == "outside")
 
 
+# #984 review round 2: a nested tell target is an expression, so a word list after `tell` (me, it, …) is dodged by
+# `(get me)`, `the me`, `item 1 of {me}`, a variable set to me, or `result`, and the app tell then sends Standard
+# Additions back to osascript itself before the app refuses. Targets are an allowlist of the app's own object
+# specifiers: `[the] <class> "<name>" | <integer> | id <integer|"…">`, `(first|last) <class>`, chained with `of`, in one
+# pair of parentheses at most; or a name every binding of which in the script is `make new …` or such a specifier.
+_OSA_NOT_CLASS = frozenset({"me", "my", "it", "its", "parent", "applescript", "result", "current", "get", "a", "an",
+                            "reference", "every", "some", "whose", "where", "the", "of", "id", "first", "last", "to"})
+_OSA_TARGET_TOKEN = re.compile(r'"[ ]*"|\d+|[A-Za-z_][A-Za-z0-9_]*|\S')
+_OSA_SELF = re.compile(r"\b(?:set\s+[A-Za-z_]\w*\s+to|copy)\s*\(?\s*(?:me|my|result)\b", re.I)
+_OSA_NAME = r"[A-Za-z_][A-Za-z0-9_]*"
+
+
+def _osa_target_ok(text: str, bound: set[str]) -> bool:
+    tokens = [t.lower() for t in _OSA_TARGET_TOKEN.findall(text)]
+    if tokens[:1] == ["("]:
+        if tokens[-1:] != [")"]:
+            return False
+        tokens = tokens[1:-1]
+    at = 0
+
+    def element(i: int) -> int | None:
+        if i < len(tokens) and tokens[i] in bound:
+            return i + 1
+        if i < len(tokens) and tokens[i] == "the":
+            i += 1
+        if i < len(tokens) and tokens[i] in {"first", "last"}:
+            return i + 2 if i + 1 < len(tokens) and _osa_class(tokens[i + 1]) else None
+        if not (i < len(tokens) and _osa_class(tokens[i])):
+            return None
+        i += 1
+        if i < len(tokens) and (tokens[i].startswith('"') or tokens[i].isdigit()):
+            return i + 1
+        if i + 1 < len(tokens) and tokens[i] == "id" and (tokens[i + 1].startswith('"') or tokens[i + 1].isdigit()):
+            return i + 2
+        return None
+    while True:
+        at = element(at)
+        if at is None:
+            return False
+        if at == len(tokens):
+            return True
+        if tokens[at] != "of":
+            return False
+        at += 1
+
+
+def _osa_class(token: str) -> bool:
+    return bool(re.fullmatch(_OSA_NAME, token)) and token not in _OSA_NOT_CLASS
+
+
+def _osa_bound(codes: list[str]) -> set[str]:
+    """The names every binding of which, anywhere in the script, is `make new …` or an object specifier."""
+    good, bad = set(), set()
+    for line in codes:
+        for match in re.finditer(rf"\bset\s+({_OSA_NAME})\s+to\s+(.*)", line, re.I):   # also `if … then set …`
+            name, value = match.group(1).lower(), match.group(2)
+            (good if re.match(r"make\s+new\s+[A-Za-z_]", value, re.I) or _osa_target_ok(value, set()) else bad).add(name)
+        for pattern in (rf"\bcopy\b.*?\bto\s+({_OSA_NAME})", rf"\brepeat\s+with\s+({_OSA_NAME})",
+                        rf"\bset\s+({_OSA_NAME})\s*'s\b"):
+            bad.update(name.lower() for name in re.findall(pattern, line, re.I))
+        for pattern in (r"\bset\s*\{([^}]*)\}", r"\bon\s+error\b(.*)", r"^\s*(?:on|to)\s+\w+\s*[({](.*)",
+                        r"^\s*script\s+(.*)", r"\bproperty\s+(.*)", r"^\s*(?:global|local)\s+(.*)"):
+            for found in re.findall(pattern, line, re.I):
+                bad.update(name.lower() for name in re.findall(_OSA_NAME, found))
+    return good - bad
+
+
+def _tell_targets_ok(script: str) -> bool:
+    """Every tell's target is an app object specifier, or a name bound only to one (see above); and nothing sets or
+    copies me, my or result. Read from the code each line yields (_osa_code: strings blanked, comments cut)."""
+    codes = [code[1] for code in (_osa_code(raw[:-1] if raw.endswith("\r") else raw) for raw in script.split("\n"))
+             if code is not None]
+    if any(_OSA_SELF.search(line) for line in codes):
+        return False
+    bound = _osa_bound(codes)
+    for line in codes:
+        if not re.match(r"tell\b", line, re.I):
+            continue
+        rest = line[4:]
+        if _tells_to(line):
+            depth, cut = 0, None
+            for found in re.finditer(r"[()]|\bto\b", rest, re.I):
+                if found.group(0) == "(":
+                    depth += 1
+                elif found.group(0) == ")":
+                    depth -= 1
+                elif depth == 0:
+                    cut = found.start()
+                    break
+            rest = rest[:cut] if cut is not None else rest
+        if not _osa_target_ok(rest, bound):
+            return False
+    return True
+
+
 def _osascript_refused(script: str, stderr: str, *, minimal_profile: bool = False) -> bool:
     """An AppleScript that failed without acting: it never compiled, or its one app refused it."""
     lines = [line.strip() for line in stderr.splitlines() if line.strip()]
     if not script.strip() or not lines:
         return False
-    if _OSA_ELSEWHERE.search(script) or not _only_tells(script):
+    if _OSA_ELSEWHERE.search(script) or not _only_tells(script) or not _tell_targets_ok(script):
         return False
     apps = {name.lower() for name in _OSA_TELLS.findall(script)}
     if len(apps) != 1 or not re.search(r"\btell\s+application\s+\"", script, re.I):

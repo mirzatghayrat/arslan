@@ -538,3 +538,101 @@ def test_a_mid_word_hash_hides_nothing_from_the_bare_run_gate():
     assert task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" to count lists'")
     # and the shortcuts form reads every word bash does: an output path after a mid-word `#` is still checked
     assert not task_service.unwrapped_once("shortcuts run 'My Shortcut'#x -o /etc/elsewhere")
+
+
+# -- nested tell targets are an allowlist (#984 review round 2) ---------------------------------------------------------
+# A tell target is an expression: a word list (`me`, `it`, …) after `tell` is dodged by `(get me)`, `the me`,
+# `item 1 of {me}`, a variable set to me, or `result`. A nested target is now an object specifier of the app only:
+# `[the] <class> "<name>" | <integer> | id <integer|"…">`, `(first|last) <class>`, chained with `of`, in one pair of
+# parentheses at most, or a variable this script bound from `make new …` or such a specifier. Benign payloads.
+OWN_REFUSAL = "0:58: execution error: Not authorized to send Apple events to Reminders. (-1743)"
+
+
+def _in_reminders(body: str) -> str:
+    return 'tell application "Reminders"\n' + body + '\n    make new list\nend tell'
+
+
+@pytest.mark.parametrize("body", [
+    '    tell (a reference to me) to display dialog "x"',
+    '    tell (get me) to display dialog "x"',
+    '    tell the me to display dialog "x"',
+    '    tell the parent to display dialog "x"',
+    '    tell item 1 of {me} to display dialog "x"',
+    '    set s to me\n    tell s to display dialog "x"',
+    '    copy me to s\n    tell s to display dialog "x"',
+    '    set s to "abc"\n    tell s to display dialog "x"',
+    '    get me\n    tell result to display dialog "x"',
+    '    tell result to display dialog "x"',
+    '    tell me to display dialog "x"',
+    '    tell my parent to display dialog "x"',
+    '    tell it to display dialog "x"',
+    '    tell "abc" to display dialog "x"',
+    '    tell AppleScript to display dialog "x"',
+    '    tell current application to display dialog "x"',
+    '    tell s to display dialog "x"',                          # never bound
+    '    tell (me)\n        display dialog "x"\n    end tell',
+    '    set s to it\n    tell s to display dialog "x"',
+    '    set s to (a reference to me)\n    tell s to display dialog "x"',
+    '    tell every list to display dialog "x"',
+    '    tell list 1 + list 2 to display dialog "x"',             # not a chain of `of`
+])
+@pytest.mark.parametrize("stderr", [OWN_REFUSAL, SYNTAX])
+def test_a_nested_tell_to_anything_but_an_app_object_stays_unknown(body, stderr, compiles):
+    script = _in_reminders(body)
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+    assert compiles["checked"] == []
+
+
+@pytest.mark.parametrize("body", [
+    '    tell list "Today" to make new reminder',
+    '    tell (first list) to count reminders',
+    '    tell the last list to count reminders',
+    '    tell list 2 to count reminders',
+    '    tell list id "x-apple-reminder://ABC" to count reminders',
+    '    tell reminder 1 of list "Today" to count reminders',
+    '    tell (reminder "Call" of list "Today")\n        get name\n    end tell',
+    '    set newList to make new list with properties {name:"Bench list"}\n    tell newList\n'
+    '        make new reminder with properties {name:"Call the bank"}\n    end tell',
+    '    set l to list "Today"\n    tell reminder 1 of l to get name',
+])
+def test_a_nested_tell_to_an_app_object_or_a_bound_one_is_known(body, compiles):
+    assert mac_applescript(_in_reminders(body), OWN_REFUSAL)
+
+
+MADE = '    set newList to make new list with properties {name:"Bench list"}\n'
+
+
+@pytest.mark.parametrize("rebind", [
+    '    set newList to me',                                  # rebound after make
+    '    copy me to newList',
+    '    copy "abc" to newList',
+    '    repeat with newList in {me}\n    end repeat',
+    '    set {newList, x} to {me, 1}',
+    "    set newList's name to \"x\"",
+    '    try\n        count lists\n    on error newList\n    end try',
+    '    if (count lists) is 0 then\n        set newList to me\n    end if',   # rebound inside an if-branch
+    '    set newList to "abc"',
+    '    if (count lists) is 0 then set newList to me',           # a one-line if
+    '    if (count lists) is 0 then set newList to "abc"',
+    '    tell list "Today" to set newList to it',                # a one-line tell
+    '    if (count lists) is 0 then\n        set newList to it\n    end if',
+    '    script newList\n    end script',
+    '    local newList',
+    '    global newList',
+])
+def test_a_name_bound_any_other_way_anywhere_is_never_a_tell_target(rebind, compiles):
+    body = MADE + rebind + '\n    tell newList to display dialog "x"'
+    assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)
+    body = rebind + '\n' + MADE + '    tell newList to display dialog "x"'                   # before the make, too
+    assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)
+
+
+def test_the_t1_r3_first_attempt_stays_known(compiles):
+    assert known(T1_R3_FIRST, refused(T1_R3_SYNTAX))
+
+
+@pytest.mark.parametrize("line", ['set s to me', 'copy me to s', 'set s to my parent', 'set s to result',
+                                  'set s to (me)'])
+def test_set_or_copy_of_me_my_or_result_anywhere_stays_unknown(line, compiles):
+    assert not mac_applescript(_in_reminders('    ' + line), OWN_REFUSAL)
