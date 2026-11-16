@@ -9,6 +9,8 @@ The model never starts a goal (Q2): `start_background_work`'s goal string is a j
 """
 from __future__ import annotations
 
+import asyncio
+
 import json
 import re
 import shlex
@@ -211,9 +213,12 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
     return say("goal_set", objective=objective[:200], checks=_listed(spec, unverifiable(spec)), budget=cost)
 
 
+_RUN_ONCE = asyncio.Lock()          # L7-5d: one plain run per goal row, however quick the Starts
+
+
 async def _start(conversation_id: str, row, say, *, confirm: bool, source: str | None) -> str:
     """Start goal. A flagged check stops it unless the user confirms them all as their own; a goal left with only
-    the user's own checks is refused (nothing for rounds to work toward)."""
+    the user's own checks runs once as a plain job (L7-5d: nothing for rounds to work toward)."""
     from arslan.companion.contracts import TaskSpec
     from server.services import background_jobs
     from server.services.goal_mode import acceptance, unverifiable
@@ -236,10 +241,18 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
         # L7-5d (user, 11-16): no check is Arslan's, so there is nothing for rounds to work toward. The task runs
         # once as a plain job instead (no rounds, no goal card), and the user confirms the checks when it's done.
         # The goal row is closed so it doesn't wait for a Start again.
-        async with repository() as repo:
-            await repo.cancel(row.id, owner_id=row.owner_id)
-        await background_jobs.start(conversation_id, spec.objective, [], outside_seen=False,
-                                    origin=source or "mac")
+        # Only the call that closes the row starts the job: a second quick Start, past the stale-row guard above
+        # during the awaits, finds the row closed here and reads its status instead.
+        async with _RUN_ONCE:
+            async with repository() as repo:
+                current = await repo.get(row.id, owner_id=row.owner_id)
+                ours = current.phase == "waiting_user" and current.pause_reason == "goal_not_started"
+                if ours:
+                    await repo.cancel(row.id, expected_version=current.version, owner_id=row.owner_id)
+            if not ours:
+                return await _status(current, say)
+            await background_jobs.start(conversation_id, spec.objective, [], outside_seen=False,
+                                        origin=source or "mac")
         return say("goal_runs_once", checks=_listed(spec, ()))
     protected = None
     if any(check.kind == "check" for check in spec.checks):

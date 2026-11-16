@@ -173,6 +173,15 @@ async def test_a_goal_of_only_the_users_own_checks_runs_once_as_a_plain_job(exec
     assert (await _row(execution_db)).phase == "cancelled"
 
 
+async def test_two_quick_starts_of_an_only_yours_goal_run_it_once(execution_db, active, model, jobs):
+    model.draft = {"criteria": [{"description": "the user is happy", "kind": "judgement"}]}
+    await _say("/goal Make the user happy")
+    lines = await asyncio.gather(*(goal_command.handle(CID, goal_command.parse("/goal start confirm"))
+                                   for _ in range(2)))
+    await asyncio.sleep(0)
+    assert len(jobs) == 1 and sum("runs once" in line for line in lines) == 1
+
+
 async def test_one_check_of_arslans_keeps_the_goal_rounds(execution_db, active, model, jobs):
     model.draft = {"criteria": [{"description": "the user is happy", "kind": "judgement"},
                                 {"description": "notes saved", "kind": "file_saved", "path": "notes.md"}]}
