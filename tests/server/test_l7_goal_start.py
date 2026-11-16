@@ -160,10 +160,25 @@ async def test_start_with_a_flagged_check_lists_it_and_start_confirm_makes_it_th
     assert GoalSpec.model_validate(row.privacy["goal_spec"]) == job.goal_spec
 
 
-async def test_a_goal_of_only_the_users_own_checks_is_refused_at_start(execution_db, active, model, jobs):
+async def test_a_goal_of_only_the_users_own_checks_runs_once_as_a_plain_job(execution_db, active, model, jobs):
+    """L7-5d (user, 11-16): when no check is Arslan's, Start runs the task once as a plain job, with no goal rounds,
+    and the line says so and lists the checks the user confirms when it's done. The goal row is closed."""
     model.draft = {"criteria": [{"description": "the user is happy", "kind": "judgement"}]}
     await _say("/goal Make the user happy")
-    assert "nothing for Arslan" in await _say("/goal start confirm") and jobs == []
+    row = await _row(execution_db)
+    line = await _say("/goal start confirm")
+    assert len(jobs) == 1 and jobs[0].goal_spec is None and jobs[0].goal == "Make the user happy"
+    assert jobs[0].job_id != row.id and background_jobs.goal_job(row.id) is None
+    assert "runs once" in line and "c1: the user is happy" in line
+    assert (await _row(execution_db)).phase == "cancelled"
+
+
+async def test_one_check_of_arslans_keeps_the_goal_rounds(execution_db, active, model, jobs):
+    model.draft = {"criteria": [{"description": "the user is happy", "kind": "judgement"},
+                                {"description": "notes saved", "kind": "file_saved", "path": "notes.md"}]}
+    await _say("/goal Make the user happy")
+    line = await _say("/goal start confirm")
+    assert line.startswith("Goal started") and len(jobs) == 1 and jobs[0].goal_spec is not None
 
 
 async def test_a_second_goal_waits_for_the_first_to_be_cleared(execution_db, active, model, jobs):

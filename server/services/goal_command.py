@@ -233,7 +233,14 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
             check.model_copy(update={"user_confirmed": True}) if check.id in flagged else check
             for check in spec.checks)})
     if all(check.user_confirmed for check in spec.checks):
-        return say("goal_only_yours")
+        # L7-5d (user, 11-16): no check is Arslan's, so there is nothing for rounds to work toward. The task runs
+        # once as a plain job instead (no rounds, no goal card), and the user confirms the checks when it's done.
+        # The goal row is closed so it doesn't wait for a Start again.
+        async with repository() as repo:
+            await repo.cancel(row.id, owner_id=row.owner_id)
+        await background_jobs.start(conversation_id, spec.objective, [], outside_seen=False,
+                                    origin=source or "mac")
+        return say("goal_runs_once", checks=_listed(spec, ()))
     protected = None
     if any(check.kind == "check" for check in spec.checks):
         # L7-5: the protected set is recorded once, here at Start, and verified before each verdict; only a user
