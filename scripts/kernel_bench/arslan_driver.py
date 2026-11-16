@@ -219,6 +219,10 @@ class TurnTracker:
                 # its outcome (server/services/background_jobs.py outcome_of).
                 if frame.get("outcome") not in (None, "done"):
                     self.end_reason = f"job_{frame.get('outcome')}"
+            elif (frame.get("goal_state") or {}).get("status") == "not_started":
+                # L7-6 (a): a drafted goal shows as a queued job_update that waits for Start, so it never finishes
+                # by itself. It must not hold the `/goal` turn open; Start's own job is awaited after GOAL_START.
+                self.jobs_open.discard(job)
             else:
                 self.jobs_open.add(job)
         elif t == "tool_call" and frame.get("tool") == "run_command":

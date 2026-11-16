@@ -899,6 +899,23 @@ def test_start_waits_for_the_goals_job_even_after_its_host_line_ended():
     assert not t.goal_turn_over(500.0) and not t.finished(500.0, 0.0)
 
 
+def test_a_not_started_goal_job_does_not_hold_the_goal_turn_open():
+    """L7-6 (a): the `/goal <prompt>` turn emits a queued job_update with goal_state not_started that only Start
+    moves on. It must end the drafting turn, or the run idles to its timeout and Start is never sent."""
+    queued = {"type": "job_update", "job_id": "j", "phase": "queued", "goal_state": {"status": "not_started"}}
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0, goal_quiet_s=60)
+    t.start_turn(0.0, goal_turn=True)
+    t.on_frame(queued, 1.0)
+    t.on_frame({"type": "stream_end"}, 2.0)
+    assert "j" not in t.jobs_open and t.finished(3.0, 0.0)
+    # Start: the same job, now running, is awaited until it finishes
+    t.start_turn(4.0, goal_turn=True, expect_job=True)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "running", "goal_state": {"status": "active"}}, 5.0)
+    assert not t.finished(100.0, 0.0)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"}, 101.0)
+    assert t.finished(102.0, 0.0)
+
+
 def test_each_turn_of_a_multi_turn_task_is_sent_as_its_own_goal_and_snapshotted_after_it(tmp_path):
     run_dir = tmp_path / "arslan-T8-r1"
     run_dir.mkdir()
