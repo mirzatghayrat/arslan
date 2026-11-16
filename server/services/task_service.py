@@ -272,14 +272,40 @@ def _set_statement(tokens: list[str], variables: set[str]) -> bool:
     return True
 
 
+# #979 max review: the line-by-line depth count must split lines as AppleScript does. Refused outright: a line break
+# Python splits on and AppleScript may not (or the reverse), a no-break space, and `¬` (a statement continued on the
+# next line).
+_OSA_ODD_BREAKS = re.compile("[\x0b\x0c\x1c\x1d\x1e\x85\u00a0\u2028\u2029\u00ac]")
+
+
+def _osa_code(raw: str) -> tuple[str, str] | None:
+    """One line's code with its comment cut off, as written and with every string literal blanked (same length), or
+    None when the line holds an unclosed string (a string across lines: its other lines are text, not code). `--` and
+    `#` inside a string start no comment."""
+    blank = _OSA_STRING.sub(lambda m: '"' + " " * (len(m.group(0)) - 2) + '"', raw)
+    if '"' in _OSA_STRING.sub("", raw):
+        return None
+    cut = min((at for at in (blank.find("--"), blank.find("#")) if at >= 0), default=len(raw))
+    return raw[:cut].strip(), blank[:cut].strip()
+
+
 def _only_tells(script: str) -> bool:
     """Every line outside a tell-application block is that kind of tell (one line or a block), a
-    side-effect-free statement (_safe_statement), or a comment."""
+    side-effect-free statement (_safe_statement), or a comment. #979 max review: the depth follows AppleScript's own
+    block structure, or the script isn't judged: no bare `end`, no `¬`, no string across lines, comments cut outside
+    strings only, one-line vs block told with strings blanked (a `to` inside a name is not one)."""
+    if _OSA_ODD_BREAKS.search(script) or "\r" in script.replace("\r\n", "\n"):
+        return False
     depth, variables = 0, set()
-    for raw in script.splitlines():
-        line = raw.split("--", 1)[0].strip()
-        if not line or line.startswith("#"):
+    for raw in script.split("\n"):
+        code = _osa_code(raw)                 # strip() takes a CRLF's \r with the rest
+        if code is None:
+            return False
+        line, blank = code
+        if not line:
             continue
+        if re.fullmatch(r"end", line, re.I):
+            return False                     # ends whichever block is open: the count can't follow it
         if depth == 0:
             if _OSA_TELL_TO.match(line) or _safe_statement(line, variables):
                 continue
@@ -288,7 +314,7 @@ def _only_tells(script: str) -> bool:
             depth = 1
         elif re.match(r"end\s+tell\Z", line, re.I):
             depth -= 1
-        elif re.match(r"tell\b", line, re.I) and not re.search(r"\sto\s", line, re.I):
+        elif re.match(r"tell\b", blank, re.I) and not re.search(r"\sto\s", blank, re.I):
             depth += 1                       # a nested tell block (to an object of the app)
     return depth == 0
 _OSA_TELLS = re.compile(r"\bapplication\s+\"([^\"]+)\"", re.I)
@@ -304,6 +330,8 @@ def _inline_osascript(command: str) -> str | None:
         return None if not quoted and any(c in body for c in "$`\\") else body
     if _shell_expands(command):
         return None                          # what the shell ran first is not in the script
+    if _shell_breaks(command):
+        return None                          # bash would read other words than shlex (#979 max review)
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars=True)
         lexer.whitespace_split = True
@@ -401,6 +429,26 @@ def _fails_to_compile(script: str) -> bool:
     except (OSError, subprocess.SubprocessError):
         return False
     return done.returncode != 0
+
+
+def _shell_breaks(command: str) -> bool:
+    """A backslash-newline (bash joins the lines; shlex keeps them apart), or a newline outside quotes (it ends the
+    command; what follows runs as shell)."""
+    if "\\\n" in command:
+        return True
+    quote, escaped = None, False
+    for char in command:
+        if escaped:
+            escaped = False
+        elif char == "\\" and quote != "'":
+            escaped = True                   # \" inside double quotes is a quote, not the end of them
+        elif char == "'" and quote != '"':
+            quote = None if quote == "'" else "'"
+        elif char == '"' and quote != "'":
+            quote = None if quote == '"' else '"'
+        elif char == "\n" and quote is None:
+            return True
+    return False
 
 
 def _shell_expands(command: str) -> bool:

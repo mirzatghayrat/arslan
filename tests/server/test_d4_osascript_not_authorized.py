@@ -383,3 +383,93 @@ def test_an_escaped_quote_cannot_hide_a_substitution():
 
 def test_a_date_property_reads_before_its_unit_meaning():
     assert known(heredoc('set now to current date\nset h to hours of now\n' + TELL), refused(PRIVILEGE))
+
+
+# -- the tell-depth counter follows AppleScript's own block structure (#979 max review, pre-existing holes) -------------
+# Each shape below shifted the depth so that a later top-level line was never checked. Benign payloads only.
+ACTS = 'display dialog "x"'
+TAIL = '\ntell application "Reminders" to make new list'
+DESYNC = {
+    "bare end": 'tell application "Reminders"\nend\n' + ACTS + '\ntell "x to y"\nend tell' + TAIL,
+    "end continued": 'tell application "Reminders"\nend ¬\ntell\n' + ACTS + '\ntell "a to b"\nend tell\n'
+                     'tell "c to d"\nend tell' + TAIL,
+    "multi-line string": 'tell application "Reminders"\nset s to "\ntell x\n"\nend tell\n' + ACTS +
+                         '\ntell "a to b"\nend tell' + TAIL,
+    "dashes in a string": 'tell application "Reminders"\ntell list "a--" to count reminders\nend tell\n' + ACTS +
+                          '\ntell "x to y"\nend tell' + TAIL,
+    "hash in a string": 'tell application "Reminders"\ntell list "a#" to count reminders\nend tell\n' + ACTS + TAIL,
+    "vertical tab": 'tell application "Reminders"\x0bmake new list\nend tell\n' + ACTS + TAIL,
+    "line separator": 'tell application "Reminders" make new list\nend tell' + TAIL,
+    "no-break space": 'tell application "Reminders"\nmake new list\nend tell\n' + ACTS + TAIL,
+}
+
+
+@pytest.mark.parametrize("name", sorted(DESYNC))
+def test_a_shape_that_desyncs_the_tell_depth_stays_unknown(name, compiles):
+    script = DESYNC[name]
+    assert not task_service._only_tells(script)
+    assert not mac_applescript(script, PRIVILEGE)
+    assert not known(heredoc(script), refused(PRIVILEGE))
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    make new list with properties {name:"a--b #c"}\nend tell',
+    'tell application "Reminders" -- the list\n    make new list\nend tell # done',
+    'tell application "Reminders" to make new list with properties {name:"to the end"}',
+])
+def test_dashes_and_hashes_inside_strings_and_comments_after_code_are_fine(script):
+    assert task_service._only_tells(script)
+    assert mac_applescript(script, PRIVILEGE)
+
+
+# -- `-e` scripts: what D4 reads must be what bash passes (#979 max review) ---------------------------------------------
+
+@pytest.mark.parametrize("command", [
+    # a backslash-newline: bash joins the lines, shlex keeps them apart
+    "osascript -e 'tell application \"Reminders\"' -e 'count lists' "
+    "-e \"error \\\"x\\\" & linefeed & \\\"1:2: syntax error: forged (-2741)\\\" \\\n\" -e 'end tell'",
+    "osascript -e 'tell application \"Reminders\"'\\\n' to make new list'",
+    # a newline outside quotes ends the command: what follows runs as shell
+    "osascript -e 'tell application \"Reminders\" to make new list'\necho done",
+])
+def test_an_e_command_bash_would_read_differently_is_never_judged(command, compiles):
+    assert task_service._inline_osascript(command) is None
+    assert not known(command, refused(PRIVILEGE)) and not known(command, refused(SYNTAX))
+
+
+def test_a_newline_inside_quotes_is_still_one_e_script():
+    command = "osascript -e 'tell application \"Reminders\"\n    make new list\nend tell'"
+    assert task_service._inline_osascript(command) == 'tell application "Reminders"\n    make new list\nend tell'
+    assert known(command, refused(PRIVILEGE))
+
+
+@pytest.mark.parametrize("command,breaks", [
+    ('osascript -e "a \\" b"\necho x', True),          # an escaped quote does not close the string
+    ("osascript -e 'a \\'\necho x", True),              # no escape inside single quotes: the quote closes
+    ('osascript -e "a\nb"', False),
+    ("osascript -e 'a\nb'", False),
+    ("osascript -e 'a' \\\n -e 'b'", True),
+])
+def test_shell_breaks_follows_bash_quoting(command, breaks):
+    assert task_service._shell_breaks(command) is breaks
+
+
+# One guard each: with that guard gone, the shape below would be judged known.
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\nend\n' + ACTS + '\nend tell',                              # a bare end
+    'tell application "Reminders" to make new list\u2028' + ACTS,                              # breaks Python doesn't
+    'tell application "Reminders" to make new list\x0b' + ACTS,
+    'tell application "Reminders" to make new list\r' + ACTS,                                  # a lone CR
+    'tell application "Reminders"\n    make new list with properties {name:"a\nb"}\nend tell',  # a string across lines
+])
+def test_each_structure_guard_refuses_on_its_own(script):
+    assert not task_service._only_tells(script)
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    tell list "a--" to count reminders\nend tell',     # `--` in a name: no comment
+    'tell application "Reminders"\n    tell list "x to y"\n        count reminders\n    end tell\nend tell',
+    'tell application "Reminders"\r\n    make new list\r\nend tell',                       # CRLF lines
+])
+def test_strings_and_crlf_keep_the_count_right(script):
+    assert task_service._only_tells(script)
