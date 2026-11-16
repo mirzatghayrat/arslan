@@ -78,8 +78,9 @@ module. Anything a row's condition can't resolve is a card.
   `screen`, `folder` (no effect class).
 - **Command-valued options (S2a-3 gap, user 2026-11-15):** a command carrying an option whose value is itself a command
   the tool runs (`tar --to-command` / `-I`, `rsync -e`, `vim -c` / `+cmd`, `emacs --eval` / `-l`) is not
-  reviewer-answerable (`option_runs_command`) until the S2a-3 option-value fix is on main. `terminal_policy.assess`
-  reads these as "run" today, so `never_auto` misses a never-list command hidden in the value.
+  reviewer-answerable. Since #964 (the S2a-3 interim) `terminal_policy.assess` asks it as `unreadable` (reason
+  `HIDDEN_OPTION`, card kind `option-command`) and `hard_rules.never_auto` is True for it, so Full access and auto both
+  show a card. `option_runs_command` names that path; it is not a separate pre-gate list.
 - **Gate a:** a run without the user's own words is never reviewed (`no_user_words`): scheduled and resumed runs, and
   any job or sub-session whose start has no user message (below).
 - A meta-test places every ask key and every kind in exactly one of the table or the never sets.
@@ -193,9 +194,10 @@ only when risky" (`auto_unmeasured`), and the classifier answers "off" anyway. N
 3. ③Hands measures on real cards from the user's Mac (the set stays on the Mac) with the schema below, and the MEASURED
    PR records a run that passes `passes()` for the configured provider, endpoint, model and `cls-2`.
 4. Every CLS and S5b gate test is green on CI (run ids cited), and each slice's effort=max review is OK.
-4a. The S2a-3 option-value fix is merged (user, 2026-11-15): `terminal_policy` reads a command-valued option (`tar
-   --to-command` / `-I`, `rsync -e`, `vim -c` / `+cmd`, `emacs --eval` / `-l`) as the command it runs, so a never-list
-   command there is refused as when typed plainly. Until then the pre-gate keeps `option_runs_command` above.
+4a. Command-valued options stay out of reviewer answers (user, 2026-11-15). **Met for v0.1.64 by #964**: such a
+   command asks as `unreadable` and `never_auto` is True for it (`option_runs_command` above). In v0.1.65 Codex's precise
+   reading (the value read as the command it runs, a never-list command there refused as when typed plainly) replaces
+   the interim.
 5. The user approves slice 8's mock and agrees in the sheet.
 
 **Measurement scope (③Hands, told 2026-11-15):** `action.card` from the per-tool set of kinds the gate can build
