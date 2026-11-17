@@ -178,18 +178,36 @@ def user_checks(objective: str) -> tuple[GoalCheck, ...]:
     return tuple(out)
 
 
-# L7-5i (L7-7 r3, T21): a judgement about a command's exit status or the check passing ("the provided check exits 0").
-_EXIT_STATUS = re.compile(r"\bexit(?:s|ed)?\s+(?:with\s+)?(?:code\s+|status\s+)?0\b|\bexit\s+(?:code|status)\b|"
-                          r"\breturn(?:s|ed)?\s+(?:code\s+)?0\b|\b(?:the\s+)?(?:provided\s+|given\s+|user's\s+)?check\s+"
-                          r"(?:pass(?:es|ed)?|succeed(?:s|ed)?)\b", re.IGNORECASE)
+# L7-5i (L7-7 r3, T21): a judgement that says the user's check (or command) exits 0 or passes: "the provided check
+# exits 0". #993 review r1: only that, or one naming the check's own script with an exit or pass; never "returns 0",
+# "documents the exit code", or "the spell check passes".
+_CHECK_EXITS = re.compile(r"\b(?:the|this|that|your|user's)\s+(?:(?:provided|given|above|below|user's|own)\s+)?"
+                          r"(?:check|command)\s+(?:exits?\b|pass(?:es|ed)?\b|succeed(?:s|ed)?\b|returns?\s+0\b)",
+                          re.IGNORECASE)
+_EXIT_WORDS = re.compile(r"\bexit(?:s|ed)?\b|\bpass(?:es|ed)?\b|\bsucceed(?:s|ed)?\b", re.IGNORECASE)
+_INTERPRETERS = {"python", "python3", "node", "bash", "sh", "zsh", "ruby", "perl", "uv", "npx", "deno"}
 
 
-def drafted_checks(content: str | None, objective: str, *, commands: bool = False) -> tuple[GoalCheck, ...]:
+def _restates_a_check(description: str, commands) -> bool:
+    """L7-5i: a drafted judgement that restates one of the user's `check:` lines: it says the check or command exits
+    or passes, or it names the check's own program (its script after an interpreter) with an exit or pass."""
+    if _CHECK_EXITS.search(description):
+        return True
+    for argv in commands:
+        words = [w for w in argv if w and not w.startswith("-")]
+        program = words[1] if len(words) > 1 and words[0].rsplit("/", 1)[-1] in _INTERPRETERS else words[0] if words else ""
+        name = program.rsplit("/", 1)[-1]
+        if name and name in description and _EXIT_WORDS.search(description):
+            return True
+    return False
+
+
+def drafted_checks(content: str | None, objective: str, *, commands=()) -> tuple[GoalCheck, ...]:
     """The drafting request's criteria as goal checks, at most CRITERIA_MAX. Never a `check:` line and never a
     declared output; a mentions check with no file becomes a judgement over nothing (flagged). A judgement's path
     counts as the user's only when the user's objective names it; drafting can't vouch for a path.
-    L7-5i `commands` (the goal has the user's own `check:` lines): a judgement about an exit status or the check
-    passing is dropped. The `check:` line verifies exactly that, and a judge that reads files never sees an exit
+    L7-5i `commands` (the argv of the user's own `check:` lines): a judgement restating one is dropped
+    (`_restates_a_check`). The `check:` line verifies exactly that, and a judge that reads files never sees an exit
     code: T21 r5's "the provided check exits 0" failed seven rounds beside a check that passed."""
     text = (content or "").strip()
     try:
@@ -200,7 +218,7 @@ def drafted_checks(content: str | None, objective: str, *, commands: bool = Fals
     for item in items if isinstance(items, list) else ():
         if not isinstance(item, dict) or item.get("kind") not in DRAFTED_KINDS or len(out) >= CRITERIA_MAX:
             continue
-        if commands and item.get("kind") == "judgement" and _EXIT_STATUS.search(str(item.get("description") or "")):
+        if commands and item.get("kind") == "judgement" and _restates_a_check(str(item.get("description") or ""), commands):
             continue
         kind, path = item["kind"], item.get("path") if isinstance(item.get("path"), str) and item["path"].strip() else None
         phrases = tuple(p for p in item.get("phrases") or () if isinstance(p, str) and p.strip())
@@ -284,7 +302,7 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
             why = await llm_errors.explain_current(str(failed))
             return say("goal_draft_failed") + (f"\n\n{why}" if why else "")
         drafted = () if getattr(response, "tool_calls", None) else drafted_checks(response.content, objective,
-                                                                                    commands=bool(own))
+                                                                                    commands=tuple(check.argv for check in own))
         # A judgement over a file the host itself listed (this conversation's earlier work saved it) is vouched for as
         # a path the user's objective names would be; any other drafted path is not (drafted_checks).
         drafted = tuple(check.model_copy(update={"by_user": True})

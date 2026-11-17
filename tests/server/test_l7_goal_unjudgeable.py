@@ -60,13 +60,14 @@ _T21_R5_DRAFT = {"criteria": [
      "path": "clean/orders.csv"},
     {"description": "The cleaned CSV passes validation, so the provided check exits 0.", "kind": "judgement",
      "path": "clean/orders.csv"}]}
+_T21_CHECK = (("python3", "validate.py", "--rules", "rules.dat", "clean/orders.csv"),)
 _T21_OBJECTIVE = ("Clean data/orders.csv into clean/orders.csv, with the same columns, so that the check below exits 0. "
                   "Don't edit validate.py, rules.dat or data/orders.csv.\n"
                   "check: python3 validate.py --rules rules.dat clean/orders.csv")
 
 
 def test_drafting_drops_a_judgement_about_the_users_checks_exit_status():
-    drafted = goal_command.drafted_checks(json.dumps(_T21_R5_DRAFT), _T21_OBJECTIVE, commands=True)
+    drafted = goal_command.drafted_checks(json.dumps(_T21_R5_DRAFT), _T21_OBJECTIVE, commands=_T21_CHECK)
     assert [check.description for check in drafted] == [
         "The cleaned CSV file exists at the target path.",
         "The cleaned CSV has the same columns as the original data/orders.csv."]
@@ -75,18 +76,25 @@ def test_drafting_drops_a_judgement_about_the_users_checks_exit_status():
 @pytest.mark.parametrize("description,dropped", [
     ("The cleaned CSV passes validation, so the provided check exits 0.", True),
     ("validate.py exits with code 0 on the cleaned file.", True),
-    ("The script's exit status is zero.", True),
+    ("The command exits with code 0.", True),
     ("The check passes on the cleaned file.", True),
     ("The README explains how to exit the app.", False),
     ("Each summary ends with an exit line naming the next step.", False),
+    # #993 review r1 MF3: real criteria that only sound like it are kept
+    ("The function returns 0 for an empty list.", False),
+    ("docs/cli.md explains every exit code.", False),
+    ("README documents the exit status of each subcommand.", False),
+    ("The spell check passes on the report.", False),
+    ("clean/orders.csv has the same columns as data/orders.csv.", False),
+    ("validate.py and rules.dat are left unchanged.", False),          # names the check's script, no exit or pass
 ])
 def test_only_a_judgement_about_an_exit_status_or_the_check_passing_is_dropped(description, dropped):
     draft = {"criteria": [{"description": description, "kind": "judgement", "path": "clean/orders.csv"}]}
-    assert (goal_command.drafted_checks(json.dumps(draft), _T21_OBJECTIVE, commands=True) == ()) is dropped
+    assert (goal_command.drafted_checks(json.dumps(draft), _T21_OBJECTIVE, commands=_T21_CHECK) == ()) is dropped
 
 
 def test_without_the_users_check_line_such_a_judgement_is_kept():
-    drafted = goal_command.drafted_checks(json.dumps(_T21_R5_DRAFT), _T21_OBJECTIVE, commands=False)
+    drafted = goal_command.drafted_checks(json.dumps(_T21_R5_DRAFT), _T21_OBJECTIVE, commands=())
     assert len(drafted) == 3
 
 
@@ -136,3 +144,34 @@ async def test_a_goal_set_with_the_users_check_line_keeps_no_exit_status_judgeme
     spec = GoalSpec.model_validate((await start._row(execution_db)).privacy["goal_spec"])
     assert [check.kind for check in spec.checks] == ["file_saved", "judgement", "check"]
     assert not any("exits 0" in check.description for check in spec.checks)
+
+
+def test_a_target_the_host_cant_even_stat_stays_failed_never_a_crash(tmp_path):
+    # #993 review r1 MF1: Path.exists() raises PermissionError under a folder the user can't search (mode 000, or a
+    # macOS folder the app has no permission for); the target stays failed, as before, and validation goes on.
+    from server.services import task_validation
+    locked = tmp_path / "locked"
+    (locked / "summaries").mkdir(parents=True)
+    locked.chmod(0o000)
+    try:
+        assert task_validation._not_a_file(str(locked / "summaries"), [], {"roots": [tmp_path], "workspace": tmp_path}) \
+            is False
+    finally:
+        locked.chmod(0o755)
+
+
+def test_a_goal_that_wrapped_up_at_its_soft_dollar_limit_says_so():
+    # #993 review r1 MF2: `/goal $1`, $0.70 spent (the soft dollar limit is the cap / 1.5)
+    from server.services import background_jobs
+    budget = {**_T20_STOP, "used": {"model_requests": 9, "tool_calls": 12, "tokens": 50000, "wall_seconds": 210.0},
+              "spend": {"usd": 0.70, "usd_cap": 1.0}}
+    stop = background_jobs.budget_stop_of(budget, pause_reason="task_budget_exhausted", tier="standard")
+    assert stop == {"reason": "usd", "used": "$0.70", "limit": "$0.67", "soft": True, "tier": "standard"}
+
+
+def test_the_hard_clock_wins_over_a_soft_count_it_fired_after():
+    # #993 review r1 MF2: past 80 tool calls (soft) and then the hard wall clock fired: the clock stopped it
+    from server.services import background_jobs
+    budget = {**_T20_STOP, "used": {**_T20_STOP["used"], "wall_seconds": 2698.0}}
+    stop = background_jobs.budget_stop_of(budget, pause_reason="task_budget_exhausted", tier="standard")
+    assert stop == {"reason": "wall_seconds", "used": 2700, "limit": 2700, "tier": "standard"}

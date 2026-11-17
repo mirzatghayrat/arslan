@@ -170,7 +170,13 @@ def _not_a_file(target: str, trace: list[dict], context: dict) -> bool:
     """L7-5i: the judge's target is there but isn't a file it reads (a folder): no work makes it one, so it is no
     verdict (`judged_not_a_file`), never a failure that sends the goal into another round."""
     named, guesses = _target_candidates(target, trace, context)
-    return any(path.exists() and not path.is_file() for path in dict.fromkeys([*named, *guesses]))
+    for path in dict.fromkeys([*named, *guesses]):
+        try:
+            if path.exists() and not path.is_file():
+                return True
+        except OSError:         # #993 review r1: a folder the user can't search: it stays failed, as before
+            continue
+    return False
 
 
 def _strict_json(reply: str):

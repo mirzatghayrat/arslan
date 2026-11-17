@@ -626,17 +626,32 @@ _CLOCK_LAG_S = 60.0      # a wall-clock stop's saved count may lag the clock by 
 
 
 def _reached(budget: dict) -> dict | None:
-    """L7-5i: the limit the budget's own counts reached: a counted one (hard before soft), else the soft wall time when
-    the time used is well short of the hard wall (closer than `_CLOCK_LAG_S` is the clock's own stop, the caller's
-    fallback). None when none was reached."""
+    """L7-5i: the limit the budget's own counts reached, a hard one always before a soft one: a counted hard limit;
+    the hard wall clock (time used within `_CLOCK_LAG_S` of it: None here, the caller's wall-clock stop); then a
+    counted soft limit, the soft dollar limit (the cap / HARD_OVER_SOFT, `Budget.soft_reached`), the soft wall time.
+    None when none was reached."""
+    from arslan.execution_budget import HARD_OVER_SOFT
     used, hard, soft = budget.get("used") or {}, budget.get("limits") or {}, budget.get("soft_limits") or {}
-    for limits, is_soft in ((hard, False), (soft, True)):
+
+    def counted(limits: dict) -> dict | None:
         for key in _COUNTED:
             limit, count = limits.get(key), used.get(key)
             if isinstance(limit, (int, float)) and isinstance(count, (int, float)) and count >= limit:
-                return {"reason": key, "used": count, "limit": limit, **({"soft": True} if is_soft else {})}
+                return {"reason": key, "used": count, "limit": limit}
+        return None
+    if (stop := counted(hard)) is not None:
+        return stop
     wall, soft_wall, hard_wall = used.get("wall_seconds"), soft.get("wall_seconds"), hard.get("wall_seconds")
-    if all(isinstance(v, (int, float)) for v in (wall, soft_wall, hard_wall)) and soft_wall <= wall < hard_wall - _CLOCK_LAG_S:
+    timed = all(isinstance(v, (int, float)) for v in (wall, hard_wall))
+    if timed and wall >= hard_wall - _CLOCK_LAG_S:
+        return None                     # the hard clock fired, whatever soft count came before it
+    if (stop := counted(soft)) is not None:
+        return {**stop, "soft": True}
+    spend = budget.get("spend") or {}
+    usd, cap = spend.get("usd"), spend.get("usd_cap")
+    if isinstance(usd, (int, float)) and isinstance(cap, (int, float)) and cap > 0 and usd >= cap / HARD_OVER_SOFT:
+        return {"reason": "usd", "used": f"${usd:.2f}", "limit": f"${cap / HARD_OVER_SOFT:.2f}", "soft": True}
+    if timed and isinstance(soft_wall, (int, float)) and wall >= soft_wall:
         return {"reason": "wall_seconds", "used": round(wall), "limit": round(soft_wall), "soft": True}
     return None
 
