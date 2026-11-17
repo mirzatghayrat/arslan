@@ -537,6 +537,8 @@ export interface GoalCheckState {
 }
 export interface GoalState {
   status: GoalStatus; round: number; met: number; total: number;
+  // L7-5h: a newer goal took over from this one while it waited; it is kept as it was, and its buttons name its id.
+  left?: boolean;
   spend_usd: number | null; cap_usd: number | null; tier: "lean" | "standard" | "ample";
   blocker: { code: "no_progress" | "protected_changed" | "unprotected" | "user_checks" | "budget"; files: string[] } | null;
   step: string | null; unprotected: boolean; missing_files: string[]; checks: GoalCheckState[];

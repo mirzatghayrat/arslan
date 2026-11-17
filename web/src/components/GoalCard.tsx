@@ -63,7 +63,7 @@ function GoalForm({ job, started, onSend, onClose }: { job: Job; started: boolea
   const blocked = rows.some((r) => r.text.trim() && r.flagged && !r.mine);
   const changed = editLines(job.goal, rows, false) !== editLines(job.goal, initial, false);
   function start() {
-    onSend?.(started || changed ? editLines(job.goal, rows, true) : "/goal start");
+    onSend?.(started || changed ? editLines(job.goal, rows, true) : `/goal start ${job.jobId}`);   // L7-5h: by its id
   }
   return <section data-testid="goal-form" data-goal-card={job.jobId} aria-label={t("jobs.goal.kickerEdit")}
     className="my-2 rounded-xl border border-primary/40 bg-surface/60 px-4 py-3 text-xs">
@@ -106,15 +106,18 @@ export default function GoalCard({ job, onSend }: { job: Job; onSend?: SendLine 
   const [noting, setNoting] = useState(false);
   const [note, setNote] = useState("");
   const g = job.goalState!;
-  if (g.status === "not_started" || editing) {
+  // L7-5h: a goal a newer one took over from is never edited here (`/goal edit` is the latest goal's); it keeps its
+  // card, and its buttons name its id.
+  if ((g.status === "not_started" && !g.left) || editing) {
     return <GoalForm job={job} started={g.status !== "not_started"} onSend={onSend} onClose={() => setEditing(false)} />;
   }
   const running = g.status === "active" && job.phase !== "finished";
   const tone = g.status === "complete" ? "border-success/50" : g.status === "active" ? "border-primary/40" : "border-warning/60";
   const n = String(g.round);
-  const stop = () => (running ? void backgroundJobsApi.stop(job.jobId).catch(() => undefined) : onSend?.("/goal clear"));
+  const stop = () => (running ? void backgroundJobsApi.stop(job.jobId).catch(() => undefined) : onSend?.(`/goal clear ${job.jobId}`));
   const resumable = ["blocked", "paused", "review", "budget_limited", "interrupted"].includes(g.status);
-  const editable = ["active", "blocked", "paused", "review"].includes(g.status);
+  const editable = !g.left && ["active", "blocked", "paused", "review"].includes(g.status);
+  const startable = g.left && g.status === "not_started";
   const met = g.checks.filter((c) => c.status === "passed");
   return <section data-testid="goal-card" data-goal-card={job.jobId} aria-label={t("jobs.goal.kicker")}
     className={`my-2 rounded-xl border ${tone} bg-surface/60 px-4 py-3 text-xs`}>
@@ -145,7 +148,9 @@ export default function GoalCard({ job, onSend }: { job: Job; onSend?: SendLine 
     {g.missing_files.length > 0 && <p className="mt-2 text-warning">{t("jobs.goal.missing", { files: g.missing_files.join(", ") })}</p>}
     {g.unprotected && g.blocker?.code !== "unprotected" && <p className="mt-2 text-warning">{t("jobs.goal.blocker.unprotected")}</p>}
     {g.status !== "complete" && g.status !== "cleared" && <div className="mt-2 flex flex-wrap items-center gap-2">
-      {resumable && <button type="button" className={primary} disabled={!onSend} onClick={() => onSend?.("/goal resume")}>
+      {startable && <button type="button" className={primary} disabled={!onSend} onClick={() => onSend?.(`/goal start ${job.jobId}`)}>
+        <Play size={10} aria-hidden />{t("jobs.goal.start")}</button>}
+      {resumable && <button type="button" className={primary} disabled={!onSend} onClick={() => onSend?.(`/goal resume ${job.jobId}`)}>
         <Play size={10} aria-hidden />{t("jobs.goal.resume")}</button>}
       {running && <button type="button" className={btn} disabled={!onSend} onClick={() => onSend?.("/goal pause")}>
         <Pause size={10} aria-hidden />{t("jobs.goal.pause")}</button>}

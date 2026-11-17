@@ -43,7 +43,8 @@ def test_runtime_notice_catalog_has_complete_locales_and_placeholders():
                        "goal_bad_check": {"line"},   # L7-4: goal_resumed, goal_complete
                        "goal_protected": {"files"},   # L7-5
                        "goal_edited": {"objective", "checks"},   # L7-6
-                       "goal_status": {"objective", "status", "round", "checks"}}
+                       "goal_status": {"objective", "status", "round", "checks"},
+               "goal_left": {"objective", "status", "round", "back"}}   # L7-5h
             assert fields == allowed.get(key, set())
             if locale != "en":
                 assert text != copy.MESSAGES["en"][key]

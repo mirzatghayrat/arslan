@@ -306,15 +306,15 @@ class TaskRepository:
             "phase": "waiting_user", "pause_reason": "goal_paused", "cancel_requested": False})
 
     async def leave_goal(self, row: CompanionTask, new_task_id: str) -> None:
-        """L7-5h: a new goal took over from this one, which wasn't running. It waits as "look over the result"
-        (review), keeping its record and card. `row` is the row as the command read it: one that changed since (a
-        Start, a stop) raises task_version_conflict, and the new goal is not written either."""
+        """L7-5h: a new goal took over from this one, which wasn't running. Only a mark and an event: its phase, stop
+        reason, spec and checkpoints stay as they were, so it can still be resumed, started or accepted by its id.
+        `row` is the row as the command read it: one that changed since (a Start, a stop) raises
+        task_version_conflict, and the new goal is not written either."""
         current = await self.get(row.id, owner_id=row.owner_id)       # the caller read a goal row waiting, not running
         if current.version != row.version:
             raise TaskError("task_version_conflict")
-        await self._advance(current, "goal_left", changes={
-            "pause_reason": "acceptance_review_required", "privacy": {**current.privacy, "goal_left_for": new_task_id}},
-            payload={"left_for": new_task_id})
+        await self._advance(current, "goal_left", changes={"privacy": {**current.privacy, "goal_left_for": new_task_id}},
+                            payload={"left_for": new_task_id})
 
     async def mark_goal_posted(self, task_id: str, *, owner_id="local") -> None:
         """L7-4: the goal's result for this attempt is posted; the boot pass posts a succeeded one that isn't."""

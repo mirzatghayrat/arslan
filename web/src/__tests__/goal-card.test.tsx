@@ -65,10 +65,10 @@ describe("edit step", () => {
       "/goal edit start\nobjective: Reconcile the October invoices\nc1: Summary sheet saved\nc2 (mine): Looks tidy");
   });
 
-  it("sends a plain /goal start when nothing was changed and nothing is flagged", () => {
+  it("sends a plain /goal start, naming the goal (L7-5h), when nothing was changed and nothing is flagged", () => {
     const onSend = show({ ...NOT_STARTED, checks: NOT_STARTED.checks.slice(0, 1) }, { phase: "queued" });
     fireEvent.click(screen.getByText("jobs.goal.start"));
-    expect(onSend).toHaveBeenCalledWith("/goal start");
+    expect(onSend).toHaveBeenCalledWith("/goal start job-1");
   });
 
   it("removes a check, adds one that stays flagged, and Cancel clears a goal that isn't started", () => {
@@ -119,13 +119,13 @@ describe("goal card", () => {
     expect(onSend.mock.lastCall?.[0]).toMatch(/^\/goal edit start\nobjective: Reconcile the October invoices\nc1: /);
   });
 
-  it("says what blocks it and the one step, and Resume sends /goal resume", () => {
+  it("says what blocks it and the one step, and Resume sends /goal resume naming the goal (L7-5h)", () => {
     const onSend = show(BLOCKED, { phase: "finished", outcome: "blocked" });
     expect(screen.getByTestId("goal-blocker").textContent).toBe("jobs.goal.blockedBy:jobs.goal.blocker.no_progress");
     expect(screen.getByTestId("goal-step").textContent).toBe(`jobs.goal.step:${BLOCKED.step}`);
     expect(screen.queryByText("jobs.goal.pause")).toBeNull();
     fireEvent.click(screen.getByText("jobs.goal.resume"));
-    expect(onSend).toHaveBeenCalledWith("/goal resume");
+    expect(onSend).toHaveBeenCalledWith("/goal resume job-1");
   });
 
   it("shows an interrupted goal's round with one Resume", () => {
@@ -177,5 +177,24 @@ describe("locales", () => {
       typeof v === "object" ? keys(v, `${prefix}${k}.`) : [`${prefix}${k}`]);
     const en = keys(jobMessages.en.goal).sort();
     for (const locale of ["zh", "ja", "es", "de", "fr"] as const) expect(keys(jobMessages[locale].goal).sort()).toEqual(en);
+  });
+});
+
+describe("a goal a newer one took over from (L7-5h)", () => {
+  it("keeps its card as it was: Resume and Stop name it, and it can't be edited here", () => {
+    const onSend = show({ ...BLOCKED, left: true }, { phase: "finished", outcome: "blocked" });
+    expect(screen.getByTestId("goal-blocker")).toBeTruthy();
+    expect(screen.queryByText("jobs.goal.edit")).toBeNull();
+    fireEvent.click(screen.getByText("jobs.goal.resume"));
+    expect(onSend).toHaveBeenLastCalledWith("/goal resume job-1");
+    fireEvent.click(screen.getByText("jobs.goal.stop"));
+    expect(onSend).toHaveBeenLastCalledWith("/goal clear job-1");
+  });
+
+  it("one that never started shows its card, not the edit form, and Start names it", () => {
+    const onSend = show({ ...NOT_STARTED, left: true }, { phase: "queued" });
+    expect(screen.queryByTestId("goal-form")).toBeNull();
+    fireEvent.click(screen.getByText("jobs.goal.start"));
+    expect(onSend).toHaveBeenLastCalledWith("/goal start job-1");
   });
 });

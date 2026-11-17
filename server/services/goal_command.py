@@ -52,26 +52,40 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None, 
     say = lambda key, **values: runtime_messages.render(key, locale, **values)  # noqa: E731
     verb, _, tail = rest.partition(" ")
     verb, tail = verb.lower(), tail.strip()
-    row = await _goal_row(conversation_id)
-    if rest == "" or rest.lower() == "status":
-        return await _status(row, say) if row is not None else say("goal_missing")
-    if rest.lower() in {"start", "start confirm"}:
-        return await _start(conversation_id, row, say, confirm=rest.lower() == "start confirm", source=source)
+    # L7-5h (the user, 11-17; a change to Q0). One rule, decided by the command alone:
+    # - acting on a goal: status, start, resume and clear (each may end with a goal's id, as its card's buttons and the
+    #   reply after a takeover do), pause and note (the running goal), edit (the latest), and Accept result (the card's
+    #   REST call, by the goal's own id). These never take over.
+    # - a new request: `/goal <objective>` (or `/goal from <job>`). It takes over from the conversation's goal when that
+    #   one is waiting (not started, or stopped for the user: review, paused, stuck, out of budget, interrupted); the
+    #   earlier goal keeps its row, state, stop reason and card, and the reply says how to get back to it. While a goal
+    #   runs, a new one answers goal_exists, as before.
+    # - a plain chat message is a new request too, but sets no goal: it runs as a turn and changes no goal.
+    rows = await _goal_rows(conversation_id)
+    row = rows[0] if rows else None                     # the conversation's latest goal
+    running = next((r for r in rows if _open(r) and _running(r)), None)
+    words = rest.split()
+    named = next((r for r in rows if words and r.id == words[-1]), None)
+    plain = " ".join(words[:-1]).lower() if named is not None else rest.lower()
+    target = named or row
+    if plain in {"", "status"}:
+        return await _status(target, say) if target is not None else say("goal_missing")
+    if plain in {"start", "start confirm", "resume"} and running is not None and running is not target:
+        return say("goal_exists")                       # one goal runs at a time
+    if plain in {"start", "start confirm"}:
+        return await _start(conversation_id, target, say, confirm=plain == "start confirm", source=source)
+    if plain == "resume":
+        return await _resume(conversation_id, target, say, source=source)
     if verb == "note" and tail:
-        return _note(row, tail, say, source=source)
-    if rest.lower() == "clear":
-        return await _clear(conversation_id, row, say)
-    if rest.lower() == "resume":
-        return await _resume(conversation_id, row, say, source=source)
+        return _note(running or row, tail, say, source=source)
+    if plain == "clear":
+        return await _clear(conversation_id, named or running or row, say)
     if rest.lower() == "pause":
-        return await _pause(row, say)
+        return await _pause(running or row, say)
     if rest.split(None, 1)[0].lower() == "edit":
         return await _edit(conversation_id, row, rest, say, source=source)
-    if row is not None and _open(row) and _running(row):
+    if running is not None:
         return say("goal_exists")
-    # L7-5h (the user, 11-17; a change to Q0): a new goal takes over from one that isn't running (waiting for review,
-    # not started, paused, stuck, out of budget). The earlier goal keeps its record and card, left for the user to
-    # look at; only a goal that is running answers goal_exists.
     replacing = row if row is not None and _open(row) else None
     if verb == "from" and tail and " " not in tail:
         return await _from_job(conversation_id, tail, say, replacing=replacing)
@@ -86,6 +100,17 @@ def _running(row) -> bool:
     """L7-5h: the goal is at work: its row runs, or a job of it is queued or running."""
     from server.services import background_jobs
     return row.phase in {"queued", "running", "verifying"} or background_jobs.goal_job(row.id) is not None
+
+
+async def _goal_rows(conversation_id: str) -> list:
+    """L7-5h: the conversation's goal rows, latest first (a new goal may have taken over from earlier ones)."""
+    from sqlalchemy import select
+    from server.db import session as db_session
+    from server.db.models import CompanionTask
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.scalars(select(CompanionTask).where(CompanionTask.conversation_id == conversation_id)
+                                 .order_by(CompanionTask.created_at.desc(), CompanionTask.id))).all()
+    return [row for row in rows if (row.privacy or {}).get("driver") == GOAL_DRIVER]
 
 
 async def _goal_row(conversation_id: str):
@@ -266,7 +291,21 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
             await repo.leave_goal(replacing, task_id)
     cost = f"{spec.tier}" + (f", ${spec.usd_cap:.2f}" if spec.usd_cap is not None else "")
     line = say("goal_set", objective=objective[:200], checks=_listed(spec, unverifiable(spec)), budget=cost)
-    return line + ("\n\n" + say("goal_left") if replacing is not None else "")
+    return line + ("\n\n" + await _left_line(replacing, say) if replacing is not None else "")
+
+
+async def _left_line(row, say) -> str:
+    """L7-5h: what the reply to a takeover says of the earlier goal: where it stopped (its status and round), that it
+    is kept as it was, and the exact command back to it (its card's Resume or Start sends the same)."""
+    from server.services.goal_mode import GoalProgress, status_of
+    from server.services.task_repository import repository
+    spec = GoalSpec.model_validate(row.privacy["goal_spec"])
+    async with repository() as repo:
+        saved = ((await repo.latest_checkpoint(row.id, owner_id=row.owner_id)) or {}).get("progress") or {}
+    record = GoalProgress.model_validate(saved["goal"]) if saved.get("goal") else GoalProgress()
+    status = status_of(row.phase, row.pause_reason)
+    back = f"/goal {'start' if status == 'not_started' else 'resume'} {row.id}"
+    return say("goal_left", objective=spec.objective[:200], status=status, round=record.round, back=back)
 
 
 _RUN_ONCE = asyncio.Lock()          # L7-5d: one plain run per goal row, however quick the Starts
@@ -560,7 +599,7 @@ async def frame_of(row) -> dict:
             "detail": row.pause_reason if started else None, "budget": None, "run_id": None, "origin": "mac",
             "criteria": [{"id": c["id"], "description": c["description"], "status": c["status"]}
                          for c in state["checks"]],
-            "goal_state": state}
+            "goal_state": {**state, "left": bool((row.privacy or {}).get("goal_left_for"))}}   # L7-5h
 
 
 async def open_frames(conversation_id: str) -> list[dict]:
@@ -570,7 +609,8 @@ async def open_frames(conversation_id: str) -> list[dict]:
     row = await _goal_row(conversation_id)
     if row is None or row.phase in {"succeeded", "cancelled"} or background_jobs.goal_job(row.id):
         return []
-    return [await frame_of(row)]
+    # L7-5h: the goals this one took over from, still waiting, keep their cards.
+    return [*[await frame_of(left) for left in await _left_for(conversation_id, row.id)], await frame_of(row)]
 
 
 async def publish(conversation_id: str, emit) -> None:
@@ -580,15 +620,12 @@ async def publish(conversation_id: str, emit) -> None:
     if row is None or background_jobs.goal_job(row.id) or (row.phase, row.pause_reason) == ("cancelled", RAN_ONCE):
         return      # L7-5e: a goal handed to a plain job has no card of its own; the job sends its own
     for left in await _left_for(conversation_id, row.id):
-        emit(await frame_of(left))      # L7-5h: the goal it took over from: its card now reads "look over the result"
+        emit(await frame_of(left))      # L7-5h: the goal it took over from, as it was (a running one sends its own)
     emit(await frame_of(row))
 
 
 async def _left_for(conversation_id: str, task_id: str) -> list:
-    """L7-5h: the goal rows that `task_id` took over from."""
-    from sqlalchemy import select
-    from server.db import session as db_session
-    from server.db.models import CompanionTask
-    async with db_session.AsyncSessionLocal() as db:
-        rows = (await db.scalars(select(CompanionTask).where(CompanionTask.conversation_id == conversation_id))).all()
-    return [row for row in rows if (row.privacy or {}).get("goal_left_for") == task_id]
+    """L7-5h: the goal rows `task_id` took over from that still wait (not ended, no job of theirs running)."""
+    from server.services import background_jobs
+    return [row for row in await _goal_rows(conversation_id) if (row.privacy or {}).get("goal_left_for") == task_id
+            and _open(row) and not background_jobs.goal_job(row.id)]
