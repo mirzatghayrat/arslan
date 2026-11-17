@@ -179,6 +179,12 @@ _OSA_DATE_PROPS = {"weekday", "hours", "minutes", "seconds", "time", "year", "mo
 _OSA_UNITS = {"days", "hours", "minutes", "weeks"}
 _OSA_COERCIONS = {"integer", "real", "number", "text", "string"}
 _OSA_COMPARE = {"=", "≠", "<", ">", "≤", "≥", "<=", ">="}
+# L7-7 bench, T1 r3 (and T1 with goal mode off): a weekday chain before the tell. Weekday and month constants are
+# terms; `is` / `is not` compare; `if` blocks nest at most this deep.
+_OSA_CONSTANTS = {"monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+                  "january", "february", "march", "april", "may", "june", "july", "august", "september", "october",
+                  "november", "december"}
+_OSA_IF_MAX = 3
 
 
 def _osa_tokens(text: str) -> list[str] | None:
@@ -217,7 +223,8 @@ def _osa_expression(tokens: list[str], at: int, variables: set[str]) -> int | No
         elif (word in _OSA_DATE_PROPS and i + 2 < len(tokens) and tokens[i + 1].lower() == "of"
               and tokens[i + 2].lower() in variables):
             i += 3                           # before units: "hours of now" is not the unit hours
-        elif tokens[i].startswith('"') or tokens[i][0].isdigit() or word in {"true", "false"} | _OSA_UNITS:
+        elif (tokens[i].startswith('"') or tokens[i][0].isdigit() or word in {"true", "false"} | _OSA_UNITS
+              or word in _OSA_CONSTANTS):
             i += 1
         elif word == "missing" and i + 1 < len(tokens) and tokens[i + 1].lower() == "value":
             i += 2
@@ -239,20 +246,51 @@ def _osa_expression(tokens: list[str], at: int, variables: set[str]) -> int | No
 
 
 def _safe_statement(line: str, variables: set[str]) -> bool:
-    """A top-level line that cannot act: `set <var> to <expression>`, `set <date property> of <var> to …`,
-    or a one-line `if <expression> <comparison> <expression> then <such a set>`. Records new variables."""
+    """A top-level line that cannot act: `set <var> to <expression>` or `set <date property> of <var> to …`.
+    Records new variables. `if` lines are _if_part's."""
+    tokens = _osa_tokens(line)
+    return bool(tokens) and _set_statement(tokens, variables)
+
+
+def _osa_condition(tokens: list[str], at: int, variables: set[str]) -> int | None:
+    """End of `<expression> <comparison> <expression>` from `at`, else None. Comparisons: _OSA_COMPARE, `is`,
+    `is not`."""
+    left = _osa_expression(tokens, at, variables)
+    if left is None or left >= len(tokens):
+        return None
+    if tokens[left] in _OSA_COMPARE:
+        return _osa_expression(tokens, left + 1, variables)
+    if tokens[left].lower() != "is":
+        return None
+    is_not = left + 1 < len(tokens) and tokens[left + 1].lower() == "not"
+    return _osa_expression(tokens, left + (2 if is_not else 1), variables)
+
+
+def _if_part(line: str, variables: set[str]) -> str | bool | None:
+    """A line of an if block, by kind: "open" (`if <condition> then`), "inline" (`if <condition> then <safe set>`),
+    "else" (`else if …` either way, or `else`), "end" (`end if`). False: such a line that may act. None: not one."""
     tokens = _osa_tokens(line)
     if not tokens:
+        return None
+    words = [token.lower() for token in tokens]
+    if words == ["end", "if"]:
+        return "end"
+    if words == ["else"]:
+        return "else"
+    if words[0] == "if":
+        at = 1
+    elif words[:2] == ["else", "if"]:
+        at = 2
+    else:
+        return None
+    end = _osa_condition(tokens, at, variables)
+    if end is None or end >= len(tokens) or words[end] != "then":
         return False
-    if tokens[0].lower() == "if":
-        left = _osa_expression(tokens, 1, variables)
-        if left is None or left >= len(tokens) or tokens[left] not in _OSA_COMPARE:
-            return False
-        right = _osa_expression(tokens, left + 1, variables)
-        if right is None or right >= len(tokens) or tokens[right].lower() != "then":
-            return False
-        return _set_statement(tokens[right + 1:], variables)
-    return _set_statement(tokens, variables)
+    if end + 1 == len(tokens):
+        return "else" if at == 2 else "open"
+    if not _set_statement(tokens[end + 1:], variables):
+        return False
+    return "else" if at == 2 else "inline"
 
 
 def _set_statement(tokens: list[str], variables: set[str]) -> bool:
@@ -318,11 +356,14 @@ def _tells_to(blank: str) -> bool:
 
 def _only_tells(script: str) -> bool:
     """Every line outside a tell-application block is that kind of tell (one line or a block), a
-    side-effect-free statement (_safe_statement), or a comment. #979 / #983 max reviews: the depth follows AppleScript's
-    own block structure, or the script isn't judged: lines split on \\n only (CRLF is fine), characters from an
-    allowlist (_osa_plain), no bare `end`, no string across lines, comments cut outside strings only, and one-line vs
-    block told by a standalone `to` outside strings and parentheses (_tells_to)."""
-    depth, variables = 0, set()
+    side-effect-free statement (_safe_statement), a comment, or a line of an if block whose conditions compare
+    side-effect-free expressions and whose branches hold only such statements (_if_part; no tell inside a branch,
+    at most _OSA_IF_MAX deep, every block closed). A one-line `if … then <set>` followed by `else if` lines and an
+    `end if` (L7-7 T1 r3) does not compile, and is read as the chain it was meant to be. #979 / #983 max reviews: the
+    depth follows AppleScript's own block structure, or the script isn't judged: lines split on \\n only (CRLF is
+    fine), characters from an allowlist (_osa_plain), no bare `end`, no string across lines, comments cut outside
+    strings only, and one-line vs block told by a standalone `to` outside strings and parentheses (_tells_to)."""
+    depth, variables, ifs, chain = 0, set(), 0, False
     for raw in script.split("\n"):
         code = _osa_code(raw[:-1] if raw.endswith("\r") else raw)
         if code is None:
@@ -333,7 +374,30 @@ def _only_tells(script: str) -> bool:
         if re.fullmatch(r"end", line, re.I):
             return False                     # ends whichever block is open: the count can't follow it
         if depth == 0:
-            if _OSA_TELL_TO.match(line) or _safe_statement(line, variables):
+            part = _if_part(line, variables)
+            if part is False:
+                return False
+            if part is not None:
+                if part == "open":
+                    ifs += 1
+                elif part == "else":
+                    if ifs == 0 and not chain:
+                        return False         # an else with no if before it
+                    ifs = max(ifs, 1)        # after a one-line if, the chain now needs its end if
+                elif part == "end":
+                    if ifs == 0:
+                        return False
+                    ifs -= 1
+                if ifs > _OSA_IF_MAX:
+                    return False
+                chain = part in {"inline", "else"}    # a chain runs on to its end if
+                continue
+            chain = False
+            if _safe_statement(line, variables):
+                continue
+            if ifs:
+                return False                 # inside a branch only safe sets: no tell, no command
+            if _OSA_TELL_TO.match(line):
                 continue
             if not _OSA_TELL_BLOCK.match(line):
                 return False                 # a statement outside the tell may act before it
@@ -342,7 +406,7 @@ def _only_tells(script: str) -> bool:
             depth -= 1
         elif re.match(r"tell\b", blank, re.I) and not _tells_to(blank):
             depth += 1                       # a nested tell block (to an object of the app)
-    return depth == 0
+    return depth == 0 and ifs == 0
 _OSA_TELLS = re.compile(r"\bapplication\s+\"([^\"]+)\"", re.I)
 
 
