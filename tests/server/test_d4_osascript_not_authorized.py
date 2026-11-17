@@ -386,6 +386,70 @@ def test_a_date_property_reads_before_its_unit_meaning():
     assert known(heredoc('set now to current date\nset h to hours of now\n' + TELL), refused(PRIVILEGE))
 
 
+# -- a second app however it is spelled (#983 review, a later item ⓪Plan wants in 0.1.64) ------------------------------
+# The app set was read with `application\s+"…"` only, so a second app written `application"Finder"`, `app "Finder"` or
+# `application ("Finder")` inside the Reminders tell wasn't counted, and a Reminders refusal was judged known after
+# that app may have acted. Benign payloads.
+REMINDERS_REFUSED = "0:58: execution error: Not authorized to send Apple events to Reminders. (-1743)"
+
+
+@pytest.mark.parametrize("second", ['tell application"Finder" to count windows',
+                                    'tell app "Finder" to count windows',
+                                    'tell app"Finder" to count windows',
+                                    'tell application ("Finder") to count windows',
+                                    'set f to application "Fin" & "der"',
+                                    'tell application f to count windows'])
+def test_a_second_app_spelled_any_way_keeps_it_unknown(second, compiles):
+    script = 'tell application "Reminders"\n    ' + second + '\n    make new list\nend tell'
+    assert not mac_applescript(script, REMINDERS_REFUSED)
+    assert not mac_applescript(script, PRIVILEGE)
+    assert not known(heredoc(script), refused(REMINDERS_REFUSED))
+
+
+def test_one_app_however_spelled_is_still_known(compiles):
+    for script in ('tell application "Reminders"\n    make new list with properties {name:"application x"}\nend tell',
+                   'tell application "Reminders" to make new list'):
+        assert mac_applescript(script, REMINDERS_REFUSED), script
+
+
+# -- #984 review round 1: a remote app, and a nested tell to osascript itself ----------------------------------------
+REMOTE = 'tell application "Reminders" of machine "eppc://example.invalid" to make new list'
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    ' + REMOTE + '\nend tell',
+    REMOTE,
+    'tell application "Reminders" of  machine "eppc://example.invalid"\n    make new list\nend tell',
+])
+@pytest.mark.parametrize("stderr", [REMINDERS_REFUSED, PRIVILEGE, SYNTAX])
+def test_a_remote_app_stays_unknown_and_is_never_compiled(script, stderr, compiles):
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+    assert compiles["checked"] == []                  # osacompile may contact the host: never asked
+
+
+def test_a_remote_app_never_runs_bare():
+    assert not task_service.unwrapped_once("osascript -e '" + REMOTE + "'")
+    assert not task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" of machine \"Studio\" to count lists'")
+    assert task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" to count lists'")
+
+
+@pytest.mark.parametrize("nested", ['tell me to display dialog "x"', 'tell it to display dialog "x"',
+                                    'tell "abc" to display dialog "x"', 'tell AppleScript to display dialog "x"',
+                                    'tell parent to display dialog "x"', 'tell (me) to display dialog "x"',
+                                    'tell me\n        display dialog "x"\n    end tell'])
+def test_a_nested_tell_back_to_osascript_itself_stays_unknown(nested, compiles):
+    script = 'tell application "Reminders"\n    ' + nested + '\n    make new list\nend tell'
+    assert not mac_applescript(script, REMINDERS_REFUSED)
+    assert not known(heredoc(script), refused(REMINDERS_REFUSED))
+
+
+def test_a_nested_tell_to_an_app_object_is_still_known(compiles):
+    script = ('tell application "Reminders"\n    tell list "Today" to make new reminder\n'
+              '    tell (first list) to count reminders\nend tell')
+    assert mac_applescript(script, REMINDERS_REFUSED)
+
+
 # -- if / else if / else / end if blocks before the tell (L7-7 bench, T1 r3 on goal mode; T1 fails in plain mode too) ---
 # The model computed due dates with a weekday chain. Its first form, one-line `if … then set …` followed by
 # `else if` lines, does not compile (-2741 at the first `else if`), so nothing ran; it stayed "outcome unknown" because
@@ -643,6 +707,22 @@ def test_a_mid_word_hash_hides_nothing_from_the_bare_run_gate():
     assert task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" to count lists'")
     # and the shortcuts form reads every word bash does: an output path after a mid-word `#` is still checked
     assert not task_service.unwrapped_once("shortcuts run 'My Shortcut'#x -o /etc/elsewhere")
+
+
+# -- with #983 on main: quotes that would pair across lines can't hide a second app (#984 review) ----------------------
+# This PR blanks string literals across the whole script, and a string literal pattern spans lines; #983's per-line
+# reading (an unclosed string or a `|` refuses the line) is what keeps a quote elsewhere from pairing over the app.
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    make new list -- a "quote\n    tell application ("Fin" & "der") to count windows\n'
+    '    -- and " here\nend tell',
+    'tell application "Reminders"\n    set |"| to 1\n    tell application ("Fin" & "der") to count windows\n'
+    '    set |"| to 2\nend tell',
+])
+@pytest.mark.parametrize("stderr", [REMINDERS_REFUSED, SYNTAX])
+def test_a_quote_paired_across_lines_hides_no_app(script, stderr, compiles):
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+    assert compiles["checked"] == []
 
 
 # -- nested tell targets are an allowlist (#984 review round 2) ---------------------------------------------------------
