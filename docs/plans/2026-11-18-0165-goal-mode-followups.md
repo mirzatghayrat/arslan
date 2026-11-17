@@ -7,6 +7,7 @@ Goal mode ships in v0.1.64 **off by default**: Settings › Advanced, `goal_mode
 
 ## Decided for v0.1.65
 
+- **Judge reliability, first.** The model judge errs both ways on judgement checks. In the v0.1.64 bench, one run (T18) had a correct ledger failed five rounds in a row, and the goal was blocked as no progress. Another run passed a ledger whose TOTAL row was wrong. Measure the judge against the bench checkers' ground truth on recorded runs, then fix it with a stricter prompt and evidence, or with a second judge, or by turning such criteria into deterministic checks where possible. This is a known limit in the v0.1.64 release notes.
 - **Folder judgements.** The judge reads a named folder's files directly inside it, within a bounded number of files and characters. Today a judgement over a folder gets no verdict (`judged_not_a_file`), and the goal hands the check to the user. This changes the "never a folder" bound for a check's own subject only, and needs its own review.
 - **Before/after for change checks (T8 fix A).** When a goal starts, the host copies the text of each judgement check's file. The judge then gets "Before this goal:" and "Now:". That makes "shorter" or "unchanged" checks judgeable; today they stop for the user.
 - **goal-outputs cleanup.** Removed outputs are kept under `data/goal-outputs/<goal>/<time>`, with no cleanup today. Three rules:
@@ -46,7 +47,6 @@ Goal mode ships in v0.1.64 **off by default**: Settings › Advanced, `goal_mode
 - **Untested:** the `clock.expired()` clause of the budget label, and `_set` re-raising TaskError during drafting.
 - **Missing drafting filter phrasings.** The filter that drops a judgement restating a `check:` line misses "exits with status zero", "exits successfully" and non-English wordings.
 - **Documentation judgements.** The filter still drops a documentation judgement that says "the command exits …".
-- **A lenient judge.** On one bench run, a judgement about a TOTAL row passed although the row was wrong.
 
 ## Already in v0.1.64 (for the record)
 - **Hard links to protected files are refused.** Checked on 2026-11-18 under real seatbelt: `link()` needs write access to the source, so a sandboxed command can't hard-link a denied file into the work folder, or make a new name inside a denied folder. #996 pins this, and the test turns red if a future macOS changes it.
