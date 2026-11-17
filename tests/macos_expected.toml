@@ -19,6 +19,14 @@ markers = 3
 cases = 114
 xfail = 0
 
+# 0.1.64 L-991-r2-7: no hard link from the commands profile to a protected or write-denied file (a key in ~/.ssh,
+# Arslan's data, a LaunchAgents plist, a shared cache), with the work folder apart and at home (2 cases), nor to a new
+# name inside one of those folders, likewise (2 cases).
+["server/sbx/test_hard_link_protected.py"]
+markers = 2
+cases = 4
+xfail = 0
+
 # 0.1.64 HOOK-2, `commands_profile(plugin_read=...)`: a hook's own plugin folder readable and not writable, a sibling
 # plugin, a link to it and the plugin root closed, with the work folder open and inside a closed folder (2 cases); with
 # no parameter, the folder closed (1 case).
