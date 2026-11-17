@@ -643,10 +643,10 @@ def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=(),
     protected file (or one accepted before), or a new file where one stops the goal. `outputs`: the declared output
     patterns of the host run just finished; only new files matching one are accepted, never one named like runner
     config. Before a run it is empty, so a file the worker wrote there between runs is a change.
-    L7-5g `exempt`: before a host run, the declared output patterns of a check line the worker's own last command ran
-    exactly (`goal_checks._ran_last`): a new file matching one is not a change here (a protected or accepted file that
-    differs still is). The host then removes each such file and its own run must write it again (`goal_checks.run`), and the check after
-    that run is the full one: a new file is accepted only as a declared output, never as runner config."""
+    L7-5g `exempt`: before a host run, the declared output patterns of a check line: a new file matching one is not a
+    change here (a protected or accepted file that differs still is). The host then removes each such file and its own
+    runs must write it again (`goal_checks.run`; L7-5i: until they settle, whatever the worker ran), and the check after
+    each run is the full one: a new file is accepted only as a declared output, never as runner config."""
     from fnmatch import fnmatchcase
     from pathlib import Path
     root = Path(root).resolve()

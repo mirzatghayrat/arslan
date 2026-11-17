@@ -861,7 +861,10 @@ async def test_a_declared_output_the_worker_writes_between_runs_stops_the_goal(_
     result, task, record, calls = await _check_turn(_a_goal_job, monkeypatch, tmp_path, replies,
                                                     lambda n: _exit(1, "F"), outputs=("tests/revealed/test_step_*.py",))
     assert record.status == "review" and "tests/revealed/test_step_9.py" in result["final"]
-    assert record.accepted == () and calls["host"] == ["python3 tests/run_checks.py"]
+    # L7-5i: the host removes the worker's file before its runs (round 1 and 2 each run until settled); the check never
+    # writes it, so the goal stops naming it, and none of the worker's bytes are kept or accepted.
+    assert record.accepted == () and calls["host"] == ["python3 tests/run_checks.py"] * 4
+    assert "didn't write it again" in result["final"] and not (tmp_path / "tests" / "revealed" / "test_step_9.py").exists()
 
 
 # -- bytecode caches: a goal job's commands keep them apart -----------------------------------------------------------
@@ -1021,7 +1024,7 @@ async def test_the_workers_exact_check_run_lets_the_host_run_it_and_accept_only_
     trace = [_wrote("app.py"), _ran(f"cd {shlex.quote(str(tmp_path) + '/')} && python3 tests/run_checks.py"),
              {"tool": "read_file", "args": {"path": "tests/revealed/test_step_2.py"}, "result": {"ok": True}}]
     host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, trace)
-    assert ran == ["python3 tests/run_checks.py"] and host.changed == ()
+    assert ran == ["python3 tests/run_checks.py"] * 2 and host.changed == ()            # L7-5i: run until settled
     assert [(a.path, a.sha256) for a in host.accepted] == [
         ("tests/revealed/test_step_2.py", goal_mode._digest(stage, False))]      # the hash after the host's run
     assert "the runner's" in stage.read_text()
@@ -1032,18 +1035,23 @@ async def test_the_workers_exact_check_run_lets_the_host_run_it_and_accept_only_
     [_ran("python3 tests/run_checks.py"), _ran("ls")],                              # another command after it
     [_ran("python3 tests/run_checks.py"), _wrote("notes.md")],                      # a write after it
     [_ran("python3 tests/run_checks.py; true")],                                     # not exactly the check
+    [_ran('python3 tests/run_checks.py; echo "EXIT=$?"')],                          # L7-7 r3 T19's honest runs
     [_ran("cd /elsewhere && python3 tests/run_checks.py")],                          # in another folder
     [_ran("cd $HOME && python3 tests/run_checks.py")],                               # not a plain cd
     [_ran("python3 tests/run_checks.py", outside_sandbox=True)],                     # not as the host runs it
     [{"tool": "run_command", "args": {"command": "python3 tests/run_checks.py"}, "result": {"ok": False}}],
     [{"tool": "read_file", "args": {"path": "app.py"}, "result": {"ok": True}}],     # no command at all
     [_ran("cd tests && python3 tests/run_checks.py")],                               # a subfolder
-], ids=["edit", "command-after", "write-after", "not-exact", "other-folder", "shell-cd", "outside", "never-started",
-        "no-run", "subfolder"])
-async def test_without_an_exact_last_check_run_the_workers_output_stays_a_protected_change(
-        trace, monkeypatch, tmp_path):
-    host, ran, _ = await _after_the_workers(monkeypatch, tmp_path, trace)
-    assert ran == [] and host.changed == ("tests/revealed/test_step_2.py",)
+], ids=["edit", "command-after", "write-after", "not-exact", "trailing-echo", "other-folder", "shell-cd", "outside",
+        "never-started", "no-run", "subfolder"])
+async def test_whatever_the_worker_ran_or_wrote_only_the_hosts_own_output_is_accepted(trace, monkeypatch, tmp_path):
+    """L7-5i drops (b)'s "the worker's last command was exactly the check": the host removes every new declared output
+    before its runs and accepts only what its own settled runs wrote, so what the worker ran adds nothing."""
+    host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, trace)
+    assert ran == ["python3 tests/run_checks.py"] * 2 and host.changed == ()
+    assert "the worker's" not in stage.read_text() and "the runner's" in stage.read_text()
+    assert [(a.path, a.sha256) for a in host.accepted] == [
+        ("tests/revealed/test_step_2.py", goal_mode._digest(stage, False))]
 
 
 async def test_an_edited_checker_still_stops_the_goal_after_an_exact_check_run(monkeypatch, tmp_path):
@@ -1059,10 +1067,14 @@ async def test_none_of_the_workers_bytes_are_accepted_whatever_the_check_does_to
     """MF1: the host removes the worker's output before its run, so an append keeps none of the worker's bytes."""
     host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py")],
                                                 host_writes=host_writes)
-    assert ran == ["python3 tests/run_checks.py"] and host.changed == ()
     assert "the worker's" not in stage.read_text() and "the runner's" in stage.read_text()
-    assert [(a.path, a.sha256) for a in host.accepted] == [(
-        "tests/revealed/test_step_2.py", goal_mode._digest(stage, False))]
+    if host_writes == "overwrite":
+        assert ran == ["python3 tests/run_checks.py"] * 2 and host.changed == ()
+        assert [(a.path, a.sha256) for a in host.accepted] == [(
+            "tests/revealed/test_step_2.py", goal_mode._digest(stage, False))]
+    else:       # L7-5i: a check that appends every run never settles: review, nothing accepted
+        assert ran == ["python3 tests/run_checks.py"] * goal_checks.STABLE_RUNS and host.accepted == ()
+        assert host.changed == ("check-1 (its check didn't settle in 10 runs)",)
 
 
 @pytest.mark.parametrize("host_writes", ["touch", "chmod", "nothing"])
@@ -1071,7 +1083,7 @@ async def test_a_check_that_doesnt_create_the_output_again_stops_the_goal(host_w
         (root / "tests" / "revealed" / "test_step_2.py").chmod(0o444)     # planted read-only, the check only chmods
     host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py", timeout_s=60)],
                                                 host_writes=host_writes, worker_also=read_only)
-    assert ran == ["python3 tests/run_checks.py"] and not stage.exists()
+    assert ran == ["python3 tests/run_checks.py"] * 2 and not stage.exists()
     assert host.changed == ("tests/revealed/test_step_2.py (the check's run didn't write it again)",)
     assert host.accepted == ()
 
@@ -1102,3 +1114,82 @@ def test_the_host_never_removes_through_a_symlinked_folder_or_counts_a_symlink_a
     assert not goal_checks._regular(root, "tests/revealed/test_step_2.py")
     (root / "here.py").symlink_to(outside / "test_step_2.py")
     assert not goal_checks._regular(root, "here.py") and goal_checks._regular(root, "tests/../outside") is False
+
+
+# -- L7-5i (the user, 11-17): a line with declared outputs runs until it settles -----------------------------------
+
+async def _staged(monkeypatch, tmp_path, *, stages=7, worker_runs=7, settle=True, room_for=None, outputs=_STAGE,
+                  trailing=""):
+    """T19's shape: each run of the check reveals the next stage's test file until all `stages` are out, then exits
+    0. The worker's own runs revealed `worker_runs` of them. `settle=False`: a check whose output differs every run.
+    `room_for`: how many host runs fit (`room`)."""
+    _layout(tmp_path)
+    revealed = tmp_path / "tests" / "revealed"
+    revealed.mkdir()
+    line = _line("python3 tests/run_checks.py", outputs=outputs)
+    goal = GoalSpec(objective="Staged check", checks=(line,), protected=goal_mode.record_protected(tmp_path, (line,)))
+    for n in range(1, worker_runs + 1):           # after Start: the worker's own runs revealed these
+        (revealed / f"test_step_{n}.py").write_text(f"def test_{n}(): ...  # revealed by the worker's run\n")
+    ran = []
+
+    async def folder():
+        return tmp_path
+
+    async def run_tool(tool, args, raw, turn):
+        ran.append(args["command"])
+        out = sorted(revealed.glob("test_step_*.py"))
+        if not settle:
+            (revealed / "test_step_1.py").write_text(f"# run {len(ran)}\n")
+            return _exit(1, "changed")
+        if len(out) < stages:
+            (revealed / f"test_step_{len(out) + 1}.py").write_text(f"def test_{len(out) + 1}(): ...  # the host's\n")
+            return _exit(1, "a new stage was revealed")
+        return _exit(0, "all stages pass")
+    calls = {"room": 0}
+
+    def room(request):
+        calls["room"] += 1
+        return room_for is None or calls["room"] <= room_for
+    monkeypatch.setattr(goal_checks, "_working_folder", folder)
+    monkeypatch.setattr(goal_checks, "room", room)
+    monkeypatch.setattr(tool_loop, "_run_tool", run_tool)
+    monkeypatch.setattr(tool_loop, "_tool_turn", lambda request, state: ToolTurn.__new__(ToolTurn))
+    monkeypatch.setattr(goal_checks, "replace", lambda turn, **kw: turn)
+    trace = [_ran(f"python3 tests/run_checks.py{trailing}")] * worker_runs
+    state = types.SimpleNamespace(tool_trace=trace, acceptance_runtime=types.SimpleNamespace(
+        progress=types.SimpleNamespace(goal=None)))
+    return await goal_checks.run(types.SimpleNamespace(goal=goal, max_tool_calls=None), state), ran, revealed
+
+
+# The worker's last command in each L7-7 r3 T19 run (the run folder's `cd <run> && ` left out): r2 and r5 ran exactly
+# the check, the others added a report of the exit code. Every one ended protected_changed on test_step_2-7.py.
+_T19_LAST = {"r1": "; printf 'FINAL_EXIT=%d\\n' $?; ls ledger tests/revealed", "r2": "", "r3": '; echo "FINAL_EXIT=$?"',
+             "r4": '; echo "final exit code is $?"', "r5": "", "r6": '; echo "EXIT: $?"'}
+
+
+@pytest.mark.parametrize("run", sorted(_T19_LAST))
+async def test_a_check_that_reveals_its_tests_in_stages_is_replayed_and_accepted(run, monkeypatch, tmp_path):
+    host, ran, revealed = await _staged(monkeypatch, tmp_path, trailing=_T19_LAST[run])
+    # the worker's 7 files were removed; the host's runs revealed all 7 again (7 runs), the 8th passed with all of
+    # them (exit 0, a new state) and the 9th left the same: settled
+    assert len(ran) == 9 and host.changed == () and host.runs[0]["result"]["exit_code"] == 0
+    assert sorted(a.path for a in host.accepted) == [f"tests/revealed/test_step_{n}.py" for n in range(1, 8)]
+    assert all("the host's" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))
+    assert all(a.sha256 == goal_mode._digest(tmp_path / a.path, False) for a in host.accepted)
+
+
+async def test_a_check_that_never_settles_stops_for_review_after_its_bound(monkeypatch, tmp_path):
+    host, ran, _ = await _staged(monkeypatch, tmp_path, settle=False)
+    assert len(ran) == goal_checks.STABLE_RUNS and host.accepted == () and host.runs == ()
+    assert host.changed == ("check-1 (its check didn't settle in 10 runs)",)
+
+
+async def test_a_check_that_hasnt_settled_when_the_budget_runs_out_stops_for_review(monkeypatch, tmp_path):
+    host, ran, _ = await _staged(monkeypatch, tmp_path, room_for=4)       # the line's admission, then 3 more runs
+    assert len(ran) == 4 and host.accepted == ()
+    assert host.changed == ("check-1 (its check didn't settle before the budget ran out)",)
+
+
+async def test_a_line_with_no_declared_outputs_still_runs_once(monkeypatch, tmp_path):
+    host, ran, _ = await _staged(monkeypatch, tmp_path, worker_runs=0, stages=0, outputs=())
+    assert ran == ["python3 tests/run_checks.py"] and host.changed == () and host.accepted == ()
