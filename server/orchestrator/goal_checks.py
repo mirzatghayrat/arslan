@@ -35,7 +35,7 @@ _TIME_RESERVE_S = 30.0       # a line runs only with this much of the hard wall 
 # L7-5i (the user, 11-17): a line with declared outputs runs until it settles, at most this many runs (each one admitted
 # and charged, each with its own timeout, all inside `room`). A check that reveals its tests in stages writes one more
 # output per run; one host run could never re-create what the worker's runs revealed (L7-7 r3, T19).
-STABLE_RUNS = 10
+STABLE_RUNS = 12             # the user, 11-17 (#991 max review r2): 10 -> 12
 
 
 def room(request) -> bool:
@@ -101,65 +101,152 @@ def _keep_folder(task_id: str, root):
     return base / safe / stamp
 
 
-def _clear(root, rels, keep) -> tuple[str, ...]:
+KEEP_MAX = 64 * 1024 * 1024      # #991 max review r2: what one verdict keeps at most (a sparse file costs the worker 0)
+
+
+def _clone(src: int, folder: int, name: str) -> bool:
+    """An APFS clone of the open file `src` as `name` in the open folder `folder` (fclonefileat: instant, holes kept, no
+    space); False where it isn't available (another volume, another file system, Linux)."""
+    import sys
+    if not sys.platform.startswith("darwin"):
+        return False
+    import ctypes
+    import ctypes.util
+    libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+    clone = getattr(libc, "fclonefileat", None)
+    return clone is not None and clone(src, folder, name.encode(), 0) == 0
+
+
+def _copy(src: int, target) -> None:
+    """The bytes of the open file `src` into a new `target` (never over an existing one)."""
+    import os
+    with os.fdopen(os.dup(src), "rb") as data, open(target, "xb") as out:
+        data.seek(0)
+        while chunk := data.read(1 << 20):
+            out.write(chunk)
+
+
+def _clear(root, rels, keep) -> tuple[tuple[str, ...], str | None]:
     """L7-5g (b): the host removes each of the worker's new outputs before its own runs, so none of the worker's
     bytes can be accepted (an append, a chmod or a touch by the check would otherwise keep them). L7-5i: removed by
-    moving it into `keep` (its bytes copied there through the fd it was opened by, then unlinked), never deleted. Only
-    regular files are moved; any other path (a symlink, a folder, a fifo), or one that can't be kept, is returned, and
-    it stops the goal as a change."""
+    moving it into `keep` (cloned, else copied, through the fd it was opened by; then unlinked), never deleted.
+    Returns (the paths not moved, a note). Only regular files are moved (opened O_NONBLOCK, so a fifo never hangs it);
+    any other path, or one that can't be kept, is returned and stops the goal as a change. Over `KEEP_MAX` in all,
+    nothing is moved: every path is returned, and the note says why. A failed copy leaves no partial file."""
     import os
     import stat
-    refused = []
-    for rel in sorted(rels):
-        try:
-            fd, name = _parent_fd(root, rel)
-        except OSError:
-            refused.append(rel)
-            continue
-        try:
-            src = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
-        except FileNotFoundError:
-            os.close(fd)
-            continue
-        except OSError:
-            os.close(fd)
-            refused.append(rel)
-            continue
-        try:
-            if not stat.S_ISREG(os.fstat(src).st_mode):
+    opened, refused = [], []
+    try:
+        for rel in sorted(rels):
+            try:
+                fd, name = _parent_fd(root, rel)
+            except OSError:
                 refused.append(rel)
                 continue
+            try:
+                src = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+            except FileNotFoundError:
+                os.close(fd)
+                continue
+            except OSError:
+                os.close(fd)
+                refused.append(rel)
+                continue
+            info = os.fstat(src)
+            if not stat.S_ISREG(info.st_mode):
+                os.close(src)
+                os.close(fd)
+                refused.append(rel)
+                continue
+            opened.append((rel, fd, name, src, info.st_size))
+        total = sum(size for *_, size in opened)
+        if total > KEEP_MAX:
+            return tuple(sorted({*refused, *(rel for rel, *_ in opened)})), (
+                f"(the outputs to remove come to {total} bytes, over the {KEEP_MAX} bytes kept per verdict; "
+                f"nothing was moved)")
+        for rel, fd, name, src, _size in opened:
             target = keep / rel
-            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            with os.fdopen(os.dup(src), "rb") as data, open(target, "xb") as out:
-                while chunk := data.read(1 << 20):
-                    out.write(chunk)
-            os.unlink(name, dir_fd=fd)
-        except OSError:
-            refused.append(rel)
-        finally:
+            made = False
+            try:
+                target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+                if target.exists() or target.is_symlink():
+                    raise FileExistsError(str(target))
+                folder = os.open(target.parent, os.O_RDONLY | os.O_DIRECTORY)
+                try:
+                    made = _clone(src, folder, target.name)
+                finally:
+                    os.close(folder)
+                if not made:
+                    made = True                     # from here on a partial copy is ours to remove
+                    _copy(src, target)
+                os.unlink(name, dir_fd=fd)
+            except OSError as exc:
+                if made and not isinstance(exc, FileExistsError):
+                    try:
+                        target.unlink()
+                    except OSError:
+                        pass
+                refused.append(rel)
+        return tuple(sorted(refused)), None
+    finally:
+        for _rel, fd, _name, src, _size in opened:
             os.close(src)
             os.close(fd)
-    return tuple(refused)
 
 
-def _end_leftovers(state) -> list:
-    """L7-5i (#991 max review L1, the user 11-17): before a line with declared outputs runs, every process the job's
-    commands left running is ended (`leftover_processes`): one could put the outputs back after the host removed them.
-    Returns what is still there."""
+async def _leftovers(state) -> tuple[str, ...]:
+    """L7-5i (#991 max review L1): before a line with declared outputs runs, a process the goal's commands left
+    running, in any attempt of it (r2 MF1: a Resume is the same goal), could put the outputs back after the host
+    removed them. Detect-only (the user, 11-18): while one is there the goal stops for review, naming it; nothing is
+    signalled. Returns why nothing may run (empty: nothing is left). Fails closed: no run of the goal bound, or a
+    process table it can't read, stops the goal for review."""
     from server.services import execution_context, leftover_processes, run_temp
     runtime = getattr(state, "acceptance_runtime", None)
-    keys = {key for key in (execution_context.current_run_id(), *(getattr(runtime, "run_ids", None) or ())) if key is not None}
+    keys = {key for key in (execution_context.current_run_id(), *(getattr(runtime, "run_ids", None) or ()))
+            if key is not None}
+    try:
+        keys |= await _attempt_runs(getattr(runtime, "task_id", None))
+    except Exception:  # noqa: BLE001 — #991 fix-check Later 2: fail closed, as an unreadable process table does
+        return ("(this goal's earlier attempts couldn't be read, so their leftover processes can't be checked)",)
     if not keys:
-        return []
+        return ("(no run of this goal is known, so its leftover processes can't be checked)",)
     groups, folders = run_temp.recorded(keys)
-    return leftover_processes.end(groups, folders)
+    try:
+        left, unknown = await asyncio.to_thread(leftover_processes.find, groups, folders, root=run_temp.root(),
+                                                keys=tuple(sorted(keys)))
+    except leftover_processes.Unreadable:
+        return ("(the running processes couldn't be listed, so the goal's leftover ones can't be checked)",)
+    return (*_left_running(left, groups), *_unattributed(unknown, groups))
 
 
-def _left_running(procs) -> tuple[str, ...]:
-    from server.services import run_temp
-    return tuple(f"(a process the work left running couldn't be ended: pid {p.pid}, `{p.command[:160]}`, started by "
-                 f"`{(run_temp.command_of(p.pgid) or 'a command of this goal')[:160]}`)" for p in procs)
+async def _attempt_runs(task_id) -> set[int]:
+    """Every run of every attempt of the goal's task (`task_attempts.run_ids`). Raises when they can't be read: the
+    caller fails closed."""
+    if not task_id:
+        return set()
+    from sqlalchemy import select
+    from server.db.task_models import TaskAttempt
+    from server.services.task_repository import repository
+    async with repository() as repo:
+        rows = (await repo.db.execute(select(TaskAttempt.run_ids).where(TaskAttempt.task_id == task_id))).all()
+    return {run for (runs,) in rows for run in (runs or ()) if isinstance(run, int)}
+
+
+def _started_by(p, groups) -> str:
+    return ((groups.get(p.pgid) or (None, None))[1] or "a command of this goal")[:160]
+
+
+def _left_running(procs, groups) -> tuple[str, ...]:
+    return tuple(f"(a process the work left running is still there, so its check's outputs weren't touched: pid "
+                 f"{p.pid}, `{p.command[:160]}`, started by `{_started_by(p, groups)}`; end it, then resume)"
+                 for p in procs)
+
+
+def _unattributed(procs, groups) -> tuple[str, ...]:
+    """#991 max review r2 MF2: a process in a group a command of this goal once had that can't be told apart from
+    another program's (its group id may have been reused): named, never signalled."""
+    return tuple(f"(a process in a group this goal's command `{_started_by(p, groups)}` had can't be told apart from "
+                 f"another program's: pid {p.pid}, `{p.command[:160]}`)" for p in procs)
 
 
 async def run(request, state) -> HostChecks:
@@ -186,20 +273,19 @@ async def run(request, state) -> HostChecks:
         except ValueError as exc:
             return (f"({exc})",), ()
     runs, printed = [], []
-    ended = False
+    checked = False
     keep = None
-    # L7-5i: leftover processes are ended only before the first line with declared outputs. A goal whose lines declare
-    # none ("the service answers its health check") keeps the service the work started; in a goal with both kinds, a
-    # line after the first outputs line runs without it (the lines keep their order: a line before the outputs line
-    # would already stop at the outputs the work wrote).
+    # L7-5i: leftover processes are looked for only before the first line with declared outputs. A goal whose lines
+    # declare none ("the service answers its health check") keeps the service the work started and never stops for it;
+    # in a goal with both kinds, a service still running at the outputs line stops the goal for review, named.
     for check in lines:
         if not room(request):                       # L7-5g: a line that doesn't fit stays not run, never half run
             break
-        if check.outputs and not ended:
-            left = await asyncio.to_thread(_end_leftovers, state)
+        if check.outputs and not checked:
+            left = await _leftovers(state)
             if left:
-                return HostChecks(runs=tuple(runs), changed=_left_running(left), accepted=accepted)
-            ended = True
+                return HostChecks(runs=tuple(runs), changed=left, accepted=accepted)
+            checked = True
         changed, _ = await changes()
         cleared = ()
         if changed and check.outputs:
@@ -211,7 +297,9 @@ async def run(request, state) -> HostChecks:
             left, _ = await changes(exempt=check.outputs)
             if not left:
                 keep = keep or _keep_folder(getattr(runtime, "task_id", None) or "goal", root)
-                cleared, changed = tuple(sorted(changed)), await asyncio.to_thread(_clear, root, changed, keep)
+                cleared = tuple(sorted(changed))
+                changed, note = await asyncio.to_thread(_clear, root, changed, keep)
+                changed = (*changed, *((note,) if note else ()))
         moved = set(cleared) - set(changed)
         kept = (f"(the outputs it removed before its runs are kept in {keep})",) if moved else ()
         if changed:

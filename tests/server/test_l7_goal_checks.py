@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from pathlib import Path
 import shlex
 import types
 
@@ -545,7 +546,9 @@ async def _check_turn(_gates, monkeypatch, tmp_path, replies, run, *, outputs=()
         created = await repo.create(spec, "goal", privacy={"driver": {"kind": "background", "goal": True},
                                                            "goal_spec": goal.model_dump(mode="json")})
         started = await repo.start(spec.id, created["version"])
-    result = await task_service._launch(started, lambda event: None, body)
+    from server.services import execution_context
+    with execution_context.bind_run(9003):       # host_run binds the job's run (host_run.execute); L7-5i needs one
+        result = await task_service._launch(started, lambda event: None, body)
     async with repository() as repo:
         task = await repo.get("goal-task")
         record = GoalProgress.model_validate((await repo.latest_checkpoint(task.id))["progress"]["goal"])
@@ -1020,7 +1023,9 @@ async def _after_the_workers(monkeypatch, tmp_path, trace, *, host_writes="overw
     request = types.SimpleNamespace(goal=goal, max_tool_calls=None)
     state = types.SimpleNamespace(tool_trace=trace, acceptance_runtime=types.SimpleNamespace(
         progress=types.SimpleNamespace(goal=None)))
-    return await goal_checks.run(request, state), ran, stage
+    from server.services import execution_context
+    with execution_context.bind_run(9002):                  # a goal's verdict always has its run
+        return await goal_checks.run(request, state), ran, stage
 
 
 def _ran(command, code=1, **args):
@@ -1086,7 +1091,7 @@ async def test_none_of_the_workers_bytes_are_accepted_whatever_the_check_does_to
     else:       # L7-5i: a check that appends every run never settles: review, nothing accepted
         assert ran == ["python3 tests/run_checks.py"] * goal_checks.STABLE_RUNS and host.accepted == ()
         changed, kept = _stopped(host)
-        assert changed == ("check-1 (its check didn't settle in 10 runs)",)
+        assert changed == ("check-1 (its check didn't settle in 12 runs)",)
         assert "the worker's" in (kept / "tests" / "revealed" / "test_step_2.py").read_text()   # moved, not deleted
 
 
@@ -1124,7 +1129,7 @@ def test_the_host_never_removes_through_a_symlinked_folder_or_counts_a_symlink_a
     (root / "tests").mkdir(parents=True)
     (root / "tests" / "revealed").symlink_to(outside)
     assert goal_checks._clear(root, ["tests/revealed/test_step_2.py"], tmp_path / "kept") == (
-        "tests/revealed/test_step_2.py",)
+        ("tests/revealed/test_step_2.py",), None)
     assert (outside / "test_step_2.py").read_text() == "the user's\n"
     assert not goal_checks._regular(root, "tests/revealed/test_step_2.py")
     (root / "here.py").symlink_to(outside / "test_step_2.py")
@@ -1134,7 +1139,8 @@ def test_the_host_never_removes_through_a_symlinked_folder_or_counts_a_symlink_a
 # -- L7-5i (the user, 11-17): a line with declared outputs runs until it settles -----------------------------------
 
 async def _staged(monkeypatch, tmp_path, *, stages=7, worker_runs=7, settle=True, room_for=None, outputs=_STAGE,
-                  trailing="", on_run=None, run_id=None, extra_lines=(), after_start=None):
+                  trailing="", on_run=None, run_id=None, extra_lines=(), after_start=None, task_id="job-t19",
+                  attempts_from_db=False):
     """T19's shape: each run of the check reveals the next stage's test file until all `stages` are out, then exits
     0. The worker's own runs revealed `worker_runs` of them. `settle=False`: a check whose output differs every run.
     `room_for`: how many host runs fit (`room`)."""
@@ -1172,17 +1178,20 @@ async def _staged(monkeypatch, tmp_path, *, stages=7, worker_runs=7, settle=True
         return room_for is None or calls["room"] <= room_for
     monkeypatch.setattr(goal_checks, "_working_folder", folder)
     monkeypatch.setattr(goal_checks, "room", room)
+    if not attempts_from_db:                       # no database here: the bound run is the goal's only one
+
+        async def no_earlier(task_id):
+            return set()
+        monkeypatch.setattr(goal_checks, "_attempt_runs", no_earlier)
     monkeypatch.setattr(tool_loop, "_run_tool", run_tool)
     monkeypatch.setattr(tool_loop, "_tool_turn", lambda request, state: ToolTurn.__new__(ToolTurn))
     monkeypatch.setattr(goal_checks, "replace", lambda turn, **kw: turn)
     trace = [_ran(f"python3 tests/run_checks.py{trailing}")] * worker_runs
     state = types.SimpleNamespace(tool_trace=trace, acceptance_runtime=types.SimpleNamespace(
-        progress=types.SimpleNamespace(goal=None), task_id="job-t19", run_ids=set()))
+        progress=types.SimpleNamespace(goal=None), task_id=task_id, run_ids=set()))
     request = types.SimpleNamespace(goal=goal, max_tool_calls=None)
-    if run_id is None:
-        return await goal_checks.run(request, state), ran, revealed
     from server.services import execution_context
-    with execution_context.bind_run(run_id):
+    with execution_context.bind_run(run_id if run_id is not None else 9001):  # a goal's verdict always has its run
         return await goal_checks.run(request, state), ran, revealed
 
 
@@ -1206,7 +1215,7 @@ async def test_a_check_that_reveals_its_tests_in_stages_is_replayed_and_accepted
 async def test_a_check_that_never_settles_stops_for_review_after_its_bound(monkeypatch, tmp_path):
     host, ran, _ = await _staged(monkeypatch, tmp_path, settle=False)
     assert len(ran) == goal_checks.STABLE_RUNS and host.accepted == () and host.runs == ()
-    assert _stopped(host)[0] == ("check-1 (its check didn't settle in 10 runs)",)
+    assert _stopped(host)[0] == ("check-1 (its check didn't settle in 12 runs)",)
 
 
 async def test_a_check_that_hasnt_settled_when_the_budget_runs_out_stops_for_review(monkeypatch, tmp_path):
@@ -1285,47 +1294,59 @@ def _leave_running(monkeypatch, tmp_path, run_id, script, *args):
     return proc
 
 
+_STILL = "(a process the work left running is still there, so its check's outputs weren't touched: pid "
+
+
+def _no_signals(monkeypatch):
+    """Detect-only (the user, 11-18): nothing of the goal's check may signal a process."""
+    sent = []
+    from server.services import leftover_processes
+    monkeypatch.setattr(os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: sent.append((pid, sig)))
+    assert not hasattr(leftover_processes, "end")
+    return sent
+
+
 @pytest.mark.parametrize("escaped", [False, True, "parent-stays"], ids=["in-its-group", "left-its-group",
                                                                           "left-its-group-no-tmpdir"])
-async def test_a_leftover_process_that_puts_the_outputs_back_is_ended_first_and_none_of_its_files_count(
+async def test_a_leftover_process_that_puts_the_outputs_back_stops_the_goal_named_and_is_never_signalled(
         monkeypatch, tmp_path, escaped):
     import subprocess
     revealed = tmp_path / "tests" / "revealed"
-    ours = []
 
     async def leave_it_running():                   # after Start: a command of the work left it running
         if escaped == "parent-stays":       # found only as the recorded command's descendant
-            ours.append(_leave_running(monkeypatch, tmp_path, 4242, _ESCAPE_KEEP, _REPLANTER, str(revealed)))
+            _leave_running(monkeypatch, tmp_path, 4242, _ESCAPE_KEEP, _REPLANTER, str(revealed))
         elif escaped:    # its parent (the recorded group) exits; the re-planter is in a group of its own
             _leave_running(monkeypatch, tmp_path, 4242, _ESCAPE, _REPLANTER, str(revealed)).wait(timeout=10)
         else:
-            ours.append(_leave_running(monkeypatch, tmp_path, 4242, _REPLANTER, str(revealed)))
+            _leave_running(monkeypatch, tmp_path, 4242, _REPLANTER, str(revealed))
         for _ in range(100):
             if (revealed / "test_step_7.py").exists():
                 break
             await asyncio.sleep(0.05)
         assert (revealed / "test_step_7.py").exists()
     try:
+        sent = _no_signals(monkeypatch)
         host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=4242, worker_runs=0, after_start=leave_it_running)
-        assert host.changed == () and len(ran) == 9                     # the host replayed every stage itself
-        assert all("the host's" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))
-        assert all(proc.wait(timeout=5) is not None for proc in ours)    # ended (and reaped: no zombie left)
-        out = subprocess.run(["pgrep", "-f", str(revealed)], capture_output=True, text=True).stdout
-        assert out.strip() == "", subprocess.run(["ps", "-o", "pid=,ppid=,pgid=,stat=,command=", "-p", out.split()[0]], capture_output=True, text=True).stdout
+        assert ran == [] and host.accepted == () and sent == []
+        assert host.changed and all(entry.startswith(_STILL) for entry in host.changed), host.changed
+        assert any("python" in entry for entry in host.changed)                     # it is named
+        assert all("leftover" in (revealed / f"test_step_{n}.py").read_text() for n in range(2, 8))   # untouched
+        assert subprocess.run(["pgrep", "-f", str(revealed)], capture_output=True, text=True).stdout.strip()  # alive
     finally:
         subprocess.run(["pkill", "-f", str(revealed)], check=False)
 
 
-async def test_a_leftover_process_that_cant_be_ended_stops_the_goal_and_is_named(monkeypatch, tmp_path):
+async def test_a_leftover_process_still_there_stops_the_goal_and_is_named(monkeypatch, tmp_path):
     from server.services import leftover_processes, run_temp
     stuck = leftover_processes.Proc(pid=4321, ppid=1, pgid=4300, started=0.0, command="python3 replant.py")
-    monkeypatch.setattr(leftover_processes, "end", lambda groups, tmpdirs: [stuck])
-    monkeypatch.setattr(run_temp, "recorded", lambda keys: ({4300: 1.0}, []))
-    monkeypatch.setattr(run_temp, "command_of", lambda group: "nohup python3 replant.py &" if group == 4300 else None)
+    monkeypatch.setattr(leftover_processes, "find", lambda groups, tmpdirs, **kw: ([stuck], []))
+    monkeypatch.setattr(run_temp, "recorded", lambda keys: ({4300: (1.0, "nohup python3 replant.py &")}, []))
     host, ran, revealed = await _staged(monkeypatch, tmp_path, run_id=77)
     assert ran == [] and host.accepted == ()
-    assert host.changed == ("(a process the work left running couldn't be ended: pid 4321, `python3 replant.py`, "
-                            "started by `nohup python3 replant.py &`)",)
+    assert host.changed == (_STILL + "4321, `python3 replant.py`, started by `nohup python3 replant.py &`; end it, then "
+                            "resume)",)
     assert all("the worker's run" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))  # untouched
 
 
@@ -1396,25 +1417,203 @@ def test_outputs_are_kept_outside_the_working_folder_even_when_arslans_data_is_i
     assert goal_checks._keep_folder("job/../1", tmp_path / "work").parent == tmp_path.resolve() / "data" / "goal-outputs" / "job____1"
 
 
-def test_a_recorded_group_id_the_system_gave_to_someone_elses_new_group_is_never_ended(monkeypatch):
+def test_a_recorded_group_id_the_system_gave_to_someone_elses_new_group_is_not_the_goals(monkeypatch):
     from server.services import leftover_processes as lp
-    table = [lp.Proc(pid=700, ppid=1, pgid=700, started=5000.0, command="someone else's app"),
+    table = [lp.Proc(pid=os.getpid(), ppid=1, pgid=os.getpid(), started=1.0, command="this server"),
+             lp.Proc(pid=700, ppid=1, pgid=700, started=5000.0, command="someone else's app"),
              lp.Proc(pid=701, ppid=700, pgid=700, started=5001.0, command="its child"),
              lp.Proc(pid=800, ppid=1, pgid=800, started=1000.0, command="the run's leftover")]
     monkeypatch.setattr(lp, "_table", lambda: table)
-    monkeypatch.setattr(lp, "_ours", lambda: set())
     monkeypatch.setattr(lp, "_tmpdir", lambda pid: None)
-    found = lp.find({700: 1000.0, 800: 1000.5}, [])           # 700 was the run's at 1000, now another group's leader
-    assert [p.pid for p in found] == [800]
-    assert lp.find({700: None}, []) == []                       # not known when it started: can't tell, never ended
+    ours, unknown = lp.find({700: (1000.0, "x"), 800: (1000.5, "y")}, [])    # 700 was the run's at 1000: reused
+    assert [p.pid for p in ours] == [800] and unknown == []
 
 
-def test_a_process_that_survives_the_kill_is_returned(monkeypatch):
+def test_a_leaderless_group_member_that_cant_be_attributed_is_returned_apart(monkeypatch):
+    # #991 max review r2 MF2 (b): the recorded leader is gone, its id may have been reused by a group whose leader left
     from server.services import leftover_processes as lp
-    stuck = lp.Proc(pid=900, ppid=1, pgid=900, started=1.0, command="stuck")
-    killed = []
-    monkeypatch.setattr(lp, "find", lambda groups, tmpdirs: [stuck])
-    monkeypatch.setattr(lp, "_END_WAIT_S", 0.2)
-    monkeypatch.setattr(lp.os, "kill", lambda pid, sig: killed.append((pid, sig)))
-    assert lp.end({900: 1.0}, []) == [stuck] and killed and killed[0] == (900, lp.signal.SIGKILL)
+    table = [lp.Proc(pid=os.getpid(), ppid=1, pgid=os.getpid(), started=1.0, command="this server"),
+             lp.Proc(pid=77750, ppid=1, pgid=777, started=9000.0, command="some daemon"),
+             lp.Proc(pid=77751, ppid=1, pgid=777, started=9000.0, command="its worker"),
+             lp.Proc(pid=88801, ppid=1, pgid=888, started=1000.0, command="the run's, with its TMPDIR")]
+    monkeypatch.setattr(lp, "_table", lambda: table)
+    monkeypatch.setattr(lp, "_tmpdir", lambda pid: "/runs/run-1-abc" if pid == 88801 else None)
+    ours, unknown = lp.find({777: (1000.0, "x"), 888: (1000.0, "y")}, [Path("/runs/run-1-abc")])
+    assert [p.pid for p in ours] == [88801] and [p.pid for p in unknown] == [77750, 77751]
+
+
+async def test_a_member_that_cant_be_attributed_stops_the_goal_named_as_such(monkeypatch, tmp_path):
+    from server.services import leftover_processes, run_temp
+    other = leftover_processes.Proc(pid=77750, ppid=1, pgid=777, started=9000.0, command="some daemon")
+    monkeypatch.setattr(leftover_processes, "find", lambda groups, tmpdirs, **kw: ([], [other]))
+    monkeypatch.setattr(run_temp, "recorded", lambda keys: ({777: (1000.0, "make serve &")}, []))
+    host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=78)
+    assert ran == [] and host.changed == ("(a process in a group this goal's command `make serve &` had can't be told "
+                                          "apart from another program's: pid 77750, `some daemon`)",)
+
+
+def test_a_reused_group_id_with_another_start_time_is_not_the_goals(monkeypatch):
+    # #991 max review r2 MF2 (a): job B's command reused job A's group id; A's record keeps A's start time
+    from server.services import leftover_processes as lp
+    table = [lp.Proc(pid=os.getpid(), ppid=1, pgid=os.getpid(), started=1.0, command="this server"),
+             lp.Proc(pid=66601, ppid=1, pgid=66601, started=8000.0, command="npm run build (job B)"),
+             lp.Proc(pid=66602, ppid=66601, pgid=66601, started=8000.0, command="its child")]
+    monkeypatch.setattr(lp, "_table", lambda: table)
+    monkeypatch.setattr(lp, "_tmpdir", lambda pid: None)
+    assert lp.find({66601: (1000.0, "job A's")}, []) == ([], [])
+
+
+def test_a_process_table_that_cant_be_read_fails_closed(monkeypatch):
+    from server.services import leftover_processes as lp
+    import subprocess
+    monkeypatch.setattr(lp.subprocess, "run", lambda *a, **k: subprocess.CompletedProcess(a, 1, stdout="", stderr="x"))
+    with pytest.raises(lp.Unreadable):
+        lp.find({}, [])
+
+
+def test_an_empty_argument_doesnt_hide_the_tmpdir():
+    from server.services import leftover_processes as lp
+    import struct
+    # #991 fix-check N17: TMPDIR first, so the old parse (which dropped the empty argument and shifted by one) misses it
+    raw = struct.pack("i", 3) + b"/usr/bin/python3\0\0\0\0" + b"python3\0\0-c\0" + b"TMPDIR=/runs/run-2-x\0PATH=/bin\0\0"
+    assert lp._env_tmpdir(raw) == "/runs/run-2-x"
+
+
+async def test_after_a_resume_a_leftover_from_an_earlier_attempt_stops_the_goal(execution_db, monkeypatch, tmp_path):
+    # #991 max review r2 MF1: attempt 1's command left the re-planter; Resume starts attempt 2 with its own run
+    from arslan.companion.contracts import TaskSpec
+    from server.services.task_repository import repository
+    spec = TaskSpec.model_validate({"id": "job-resumed", "instruction": "Staged check", "locale": "en",
+                                    "scope": {"kind": "task", "owner_id": "local", "task_id": "job-resumed"},
+                                    "acceptance": [task_service.ANSWER_DELIVERED]})
+    async with repository() as repo:
+        created = await repo.create(spec, "goal")
+        await repo.start(spec.id, created["version"])
+        from sqlalchemy import update
+        from server.db.task_models import TaskAttempt
+        await repo.db.execute(update(TaskAttempt).where(TaskAttempt.task_id == spec.id).values(run_ids=[4343]))
+                                                                                # attempt 1's run
+    revealed = tmp_path / "tests" / "revealed"
+
+    async def leave_it_running():
+        _leave_running(monkeypatch, tmp_path, 4343, _REPLANTER, str(revealed))
+        for _ in range(100):
+            if (revealed / "test_step_7.py").exists():
+                break
+            await asyncio.sleep(0.05)
+        assert (revealed / "test_step_7.py").exists()
+    import subprocess
+    try:
+        sent = _no_signals(monkeypatch)
+        host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=4444, worker_runs=0, after_start=leave_it_running,
+                                     task_id="job-resumed", attempts_from_db=True)    # attempt 2's run
+        assert ran == [] and sent == [] and host.changed and host.changed[0].startswith(_STILL), host.changed
+    finally:
+        subprocess.run(["pkill", "-f", str(revealed)], check=False)
+
+
+async def test_without_a_bound_run_the_goal_stops_rather_than_skip_the_check(monkeypatch, tmp_path):
+    from server.services import execution_context
+    token = execution_context._run_id.set(None)
+    try:
+        host = await goal_checks._leftovers(types.SimpleNamespace(acceptance_runtime=types.SimpleNamespace(
+            task_id=None, run_ids=set())))
+    finally:
+        execution_context._run_id.reset(token)
+    assert host == ("(no run of this goal is known, so its leftover processes can't be checked)",)
+
+
+# -- #991 max review r2 MF3: what the host keeps is bounded, never partial, never over another ----------------------
+
+def _output(root, size=None, text="the worker's\n"):
+    stage = root / "tests" / "revealed" / "test_step_2.py"
+    stage.parent.mkdir(parents=True, exist_ok=True)
+    if size is None:
+        stage.write_text(text)
+    else:
+        with open(stage, "wb") as out:
+            out.truncate(size)                        # sparse: costs the worker nothing
+    return stage
+
+
+def test_outputs_over_the_kept_bound_are_not_moved_and_the_goal_says_why(tmp_path):
+    stage = _output(tmp_path / "work", size=goal_checks.KEEP_MAX + 1)
+    refused, note = goal_checks._clear(tmp_path / "work", ["tests/revealed/test_step_2.py"], tmp_path / "kept")
+    assert refused == ("tests/revealed/test_step_2.py",) and stage.exists() and not (tmp_path / "kept").exists()
+    assert note == (f"(the outputs to remove come to {goal_checks.KEEP_MAX + 1} bytes, over the "
+                    f"{goal_checks.KEEP_MAX} bytes kept per verdict; nothing was moved)")
+
+
+def test_a_copy_that_fails_keeps_the_original_and_leaves_no_partial_file(monkeypatch, tmp_path):
+    import errno
+    stage = _output(tmp_path / "work")
+
+    def full(src, target):
+        with open(target, "xb") as out:
+            out.write(b"half")
+        raise OSError(errno.ENOSPC, "No space left on device")
+    monkeypatch.setattr(goal_checks, "_clone", lambda src, folder, name: False)
+    monkeypatch.setattr(goal_checks, "_copy", full)
+    refused, note = goal_checks._clear(tmp_path / "work", ["tests/revealed/test_step_2.py"], tmp_path / "kept")
+    assert refused == ("tests/revealed/test_step_2.py",) and note is None
+    assert stage.read_text() == "the worker's\n"
+    assert not (tmp_path / "kept" / "tests" / "revealed" / "test_step_2.py").exists()
+
+
+def test_a_kept_file_already_there_is_never_overwritten(tmp_path):
+    stage = _output(tmp_path / "work")
+    kept = tmp_path / "kept" / "tests" / "revealed" / "test_step_2.py"
+    kept.parent.mkdir(parents=True)
+    kept.write_text("kept earlier\n")
+    refused, _ = goal_checks._clear(tmp_path / "work", ["tests/revealed/test_step_2.py"], tmp_path / "kept")
+    assert refused == ("tests/revealed/test_step_2.py",) and kept.read_text() == "kept earlier\n" and stage.exists()
+
+
+@pytest.mark.parametrize("clone", [True, False], ids=["clone", "copy"])
+def test_an_output_is_moved_into_the_kept_folder_byte_for_byte(monkeypatch, tmp_path, clone):
+    stage = _output(tmp_path / "work")
+    if not clone:
+        monkeypatch.setattr(goal_checks, "_clone", lambda src, folder, name: False)
+    refused, note = goal_checks._clear(tmp_path / "work", ["tests/revealed/test_step_2.py"], tmp_path / "kept")
+    assert (refused, note) == ((), None) and not stage.exists()
+    assert (tmp_path / "kept" / "tests" / "revealed" / "test_step_2.py").read_text() == "the worker's\n"
+
+
+def test_a_fifo_at_an_output_path_is_refused_at_once(tmp_path):
+    fifo = tmp_path / "work" / "tests" / "revealed" / "test_step_2.py"
+    fifo.parent.mkdir(parents=True)
+    os.mkfifo(fifo)
+    import time
+    started = time.monotonic()
+    refused, _ = goal_checks._clear(tmp_path / "work", ["tests/revealed/test_step_2.py"], tmp_path / "kept")
+    assert refused == ("tests/revealed/test_step_2.py",) and time.monotonic() - started < 2 and fifo.exists()
+
+
+async def test_attempts_that_cant_be_read_stop_the_goal_rather_than_check_only_this_one(monkeypatch, tmp_path):
+    # #991 fix-check Later 2: a database error is no reason to look at the current attempt alone
+    async def broken(task_id):
+        raise RuntimeError("database is locked")
+    from server.services import execution_context
+    monkeypatch.setattr(goal_checks, "_attempt_runs", broken)
+    with execution_context.bind_run(9100):
+        stop = await goal_checks._leftovers(types.SimpleNamespace(acceptance_runtime=types.SimpleNamespace(
+            task_id="job-x", run_ids=set())))
+    assert stop == ("(this goal's earlier attempts couldn't be read, so their leftover processes can't be checked)",)
+
+
+def test_a_process_carrying_a_finished_earlier_runs_tmpdir_is_the_goals(monkeypatch, tmp_path):
+    # #991 fix-check Later 1: a setsid'd re-planter of attempt 1 keeps run-555-…'s TMPDIR after that folder is gone
+    from server.services import leftover_processes as lp
+    root = tmp_path / "arslan-runs-x"
+    root.mkdir()
+    table = [lp.Proc(pid=os.getpid(), ppid=1, pgid=os.getpid(), started=1.0, command="this server"),
+             lp.Proc(pid=55502, ppid=1, pgid=55502, started=9000.0, command="python3 -c replant"),
+             lp.Proc(pid=55503, ppid=1, pgid=55503, started=9000.0, command="another run's, run-5550-…"),
+             lp.Proc(pid=55504, ppid=1, pgid=55504, started=9000.0, command="elsewhere, run-555-…")]
+    tmps = {55502: str(root / "run-555-abcdef"), 55503: str(root / "run-5550-zzz"), 55504: str(tmp_path / "run-555-x")}
+    monkeypatch.setattr(lp, "_table", lambda: table)
+    monkeypatch.setattr(lp, "_tmpdir", lambda pid: tmps.get(pid))
+    ours, unknown = lp.find({}, [], root=root, keys=(555, 777))
+    assert [p.pid for p in ours] == [55502] and unknown == []
+    assert lp.find({}, [], root=root, keys=()) == ([], [])
 
