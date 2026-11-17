@@ -115,6 +115,40 @@ final class VectorTests: XCTestCase {
     }
 }
 
+extension VectorTests {
+    /// §5.13: the Bridge builds vectors (a)–(d) from the Mac's install card: the same fields, the Mac's
+    /// `phone_can_approve` (or the absent rule), and the phone's no becomes the window's cancel.
+    func testTheCapabilityCardVectorsAreWhatTheBridgeSends() throws {
+        let bodies = try XCTUnwrap(try load("messages.json")["examples"] as? [[String: Any]]).compactMap { e -> (String, [String: Any])? in
+            let env = e["envelope"] as? [String: Any]
+            return (env?["type"] as? String ?? "", env?["body"] as? [String: Any] ?? [:])
+        }
+        let cards = bodies.filter { $0.0 == "approval.request" && $0.1["perm_kind"] as? String == "capability" }.map(\.1)
+        XCTAssertEqual(cards.count, 3)
+        for vector in cards {
+            var frame: [String: Any] = ["type": "propose_capability", "call_id": vector["approval_id"] as Any,
+                                        "name": "excel-mcp-server", "source_url": vector["target"] as Any,
+                                        "phone": ["source": vector["source"], "abilities": vector["abilities"], "checks": vector["checks"]]
+                                            .compactMapValues { $0 }]
+            if let can = vector["phone_can_approve"] { frame["phone_can_approve"] = can }
+            let m = FrameMapper(conversationID: "c1")
+            let sent = try XCTUnwrap(m.phoneMessages(for: frame).first?.body)
+            for key in ["action", "target", "risk", "perm_kind", "source", "abilities", "checks"] {
+                func json(_ value: Any?) throws -> Data? {
+                    try value.map { try JSONSerialization.data(withJSONObject: [$0], options: [.sortedKeys]) }
+                }
+                XCTAssertEqual(try json(sent[key]), try json(vector[key]), key)
+            }
+            XCTAssertEqual(sent["phone_can_approve"] as? Bool, vector["phone_can_approve"] as? Bool ?? false, "(c): absent is no")
+            let deny = try XCTUnwrap(bodies.first { $0.0 == "approval.answer" && $0.1["approval_id"] as? String == vector["approval_id"] as? String }?.1)
+            XCTAssertEqual(try m.backendFrames(for: "approval.answer", body: deny).first?["type"] as? String, "cancel_capability")
+        }
+        let results = bodies.filter { $0.0 == "sub_session.history.result" }.map(\.1)
+        XCTAssertFalse(results.isEmpty)
+        XCTAssertTrue(results.allSatisfy { FrameMapper.flag($0["view_only"]) == true }, "view_only is the literal true")
+    }
+}
+
 final class PairingVectorTests: XCTestCase {
     func testEveryPairingQRCase() throws {
         let url = VectorTests.vectors.appendingPathComponent("pairing-qr.json")

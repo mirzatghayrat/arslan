@@ -1066,6 +1066,7 @@
         "unreadable-script-reach": "Son script se connecte, lance des programmes ou pilote des apps",
         "unreadable-quoting": "Ses guillemets ne se ferment pas : on ne peut pas lire ce qui s’exécute",
         "unreadable-complex": "Trop complexe pour être lue avant de s’exécuter",
+        "unreadable-option-command": "Exécute une commande cachée dans l'une de ses options (elle figure dans la commande ci-dessus)",
         "unreadable-send": "Arslan ne peut pas lire entièrement ce que cela envoie ; cela peut envoyer des données locales",
         "delete-outside-trash": "Les place dans la corbeille ; vous pouvez les y récupérer",
         "delete-outside-protected": "Les données et clés d'Arslan restent en place ; le reste va dans la corbeille",

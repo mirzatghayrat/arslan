@@ -49,7 +49,7 @@ export const RULES = new Set(["delete-outside", "send-mail", "send-message", "up
   "remote-shell", "apple-events", "shortcuts", "force-kill", "login-items", "keychain-write", "system-settings",
   "open-app", "screen-clipboard", "protected-write", "unreadable"]);
 /** Why the server could not read a command (server/services/command_confirm.py `UNREADABLE`), each with its line. */
-export const UNREADABLE_KINDS = new Set(["fetched-code", "script-reach", "quoting", "complex"]);
+export const UNREADABLE_KINDS = new Set(["fetched-code", "script-reach", "quoting", "complex", "option-command"]);
 /** The delete modes with a line of their own; "permanent" is the rule's plain line. */
 const DELETE_MODE_LINES = new Set(["trash", "protected", "sandboxed"]);
 

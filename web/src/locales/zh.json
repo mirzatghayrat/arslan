@@ -1066,6 +1066,7 @@
         "unreadable-script-reach": "里面的脚本会联网、启动程序或操控 App",
         "unreadable-quoting": "引号没有闭合，读不出会运行什么",
         "unreadable-complex": "太复杂，运行前读不清",
+        "unreadable-option-command": "会运行藏在某个选项里的命令（就在上面的命令里）",
         "unreadable-send": "Arslan 读不全这条命令会发出什么，可能会发出本机数据",
         "delete-outside-trash": "移到废纸篓，你可以从那里找回",
         "delete-outside-protected": "Arslan 自己的数据和密钥留在原处，其余的移到废纸篓",

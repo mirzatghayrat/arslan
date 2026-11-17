@@ -343,9 +343,8 @@ async def _eligible_statement(db, ctx, now):
         project = await db.get(Project, ctx.project_id)
         if project and project.owner_id == ctx.owner_id and project.status == "active":
             scopes.append(and_(MemoryEntry.scope_kind == "project", MemoryEntry.scope_id == ctx.project_id))
-    for kind, identity in (("domain", ctx.domain_id), ("expert", ctx.expert_id)):
-        if identity:
-            scopes.append(and_(MemoryEntry.scope_kind == kind, MemoryEntry.scope_id == identity))
+    if ctx.domain_id:      # no "expert" scope since C7c-5c (0103 moved those entries to global)
+        scopes.append(and_(MemoryEntry.scope_kind == "domain", MemoryEntry.scope_id == ctx.domain_id))
     allowed_sensitivity, allowed_use = shown_to_model(ctx)
     statement = select(MemoryEntry, MemoryRevision).join(
         MemoryRevision, and_(MemoryRevision.id == MemoryEntry.current_revision_id,

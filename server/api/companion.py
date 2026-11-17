@@ -463,7 +463,10 @@ def _noticed_earlier():
     ).where(MemoryProposal.kind == "memory_v2", MemoryProposal.status == "pending",
             MemoryEntry.owner_id == USER.owner_id,
             MemoryEntry.status == "proposed", MemoryEntry.sensitivity == "normal",
-            exists().where(MemorySource.entry_id == MemoryEntry.id, MemorySource.source_kind == "extractor"))
+            exists().where(MemorySource.entry_id == MemoryEntry.id, MemorySource.source_kind == "extractor"),
+            # C7c-5c: an entry 0103 moved out of the retired expert scope keeps its old sources (an extractor's
+            # among them) and waits for the user one by one, never in this bulk "Use all".
+            ~exists().where(MemorySource.entry_id == MemoryEntry.id, MemorySource.source_kind == "migration"))
 
 
 @router.get("/memory/noticed-earlier")

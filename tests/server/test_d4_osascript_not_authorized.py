@@ -176,7 +176,8 @@ def heredoc(script):
     return "osascript <<'EOF'\n" + script + "\nEOF"
 
 
-TELL = 'tell application "Reminders"\n    make new reminder with properties {name:listName}\nend tell'
+# #985: a bare value must be a name the script sets (else AppleScript may read it as a command), so a literal here.
+TELL = 'tell application "Reminders"\n    make new reminder with properties {name:"Today"}\nend tell'
 
 
 @pytest.mark.parametrize("prelude", [
@@ -383,3 +384,556 @@ def test_an_escaped_quote_cannot_hide_a_substitution():
 
 def test_a_date_property_reads_before_its_unit_meaning():
     assert known(heredoc('set now to current date\nset h to hours of now\n' + TELL), refused(PRIVILEGE))
+
+
+# -- a second app however it is spelled (#983 review, a later item ⓪Plan wants in 0.1.64) ------------------------------
+# The app set was read with `application\s+"…"` only, so a second app written `application"Finder"`, `app "Finder"` or
+# `application ("Finder")` inside the Reminders tell wasn't counted, and a Reminders refusal was judged known after
+# that app may have acted. Benign payloads.
+REMINDERS_REFUSED = "0:58: execution error: Not authorized to send Apple events to Reminders. (-1743)"
+
+
+@pytest.mark.parametrize("second", ['tell application"Finder" to count windows',
+                                    'tell app "Finder" to count windows',
+                                    'tell app"Finder" to count windows',
+                                    'tell application ("Finder") to count windows',
+                                    'set f to application "Fin" & "der"',
+                                    'tell application f to count windows'])
+def test_a_second_app_spelled_any_way_keeps_it_unknown(second, compiles):
+    script = 'tell application "Reminders"\n    ' + second + '\n    make new list\nend tell'
+    assert not mac_applescript(script, REMINDERS_REFUSED)
+    assert not mac_applescript(script, PRIVILEGE)
+    assert not known(heredoc(script), refused(REMINDERS_REFUSED))
+
+
+def test_one_app_however_spelled_is_still_known(compiles):
+    for script in ('tell application "Reminders"\n    make new list with properties {name:"application x"}\nend tell',
+                   'tell application "Reminders" to make new list'):
+        assert mac_applescript(script, REMINDERS_REFUSED), script
+
+
+# -- #984 review round 1: a remote app, and a nested tell to osascript itself ----------------------------------------
+REMOTE = 'tell application "Reminders" of machine "eppc://example.invalid" to make new list'
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    ' + REMOTE + '\nend tell',
+    REMOTE,
+    'tell application "Reminders" of  machine "eppc://example.invalid"\n    make new list\nend tell',
+])
+@pytest.mark.parametrize("stderr", [REMINDERS_REFUSED, PRIVILEGE, SYNTAX])
+def test_a_remote_app_stays_unknown_and_is_never_compiled(script, stderr, compiles):
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+    assert compiles["checked"] == []                  # osacompile may contact the host: never asked
+
+
+def test_a_remote_app_never_runs_bare():
+    assert not task_service.unwrapped_once("osascript -e '" + REMOTE + "'")
+    assert not task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" of machine \"Studio\" to count lists'")
+    assert task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" to count lists'")
+
+
+@pytest.mark.parametrize("nested", ['tell me to display dialog "x"', 'tell it to display dialog "x"',
+                                    'tell "abc" to display dialog "x"', 'tell AppleScript to display dialog "x"',
+                                    'tell parent to display dialog "x"', 'tell (me) to display dialog "x"',
+                                    'tell me\n        display dialog "x"\n    end tell'])
+def test_a_nested_tell_back_to_osascript_itself_stays_unknown(nested, compiles):
+    script = 'tell application "Reminders"\n    ' + nested + '\n    make new list\nend tell'
+    assert not mac_applescript(script, REMINDERS_REFUSED)
+    assert not known(heredoc(script), refused(REMINDERS_REFUSED))
+
+
+def test_a_nested_tell_to_an_app_object_is_still_known(compiles):
+    script = ('tell application "Reminders"\n    tell list "Today" to make new reminder\n'
+              '    tell (first list) to count reminders\nend tell')
+    assert mac_applescript(script, REMINDERS_REFUSED)
+
+
+# -- if / else if / else / end if blocks before the tell (L7-7 bench, T1 r3 on goal mode; T1 fails in plain mode too) ---
+# The model computed due dates with a weekday chain. Its first form, one-line `if … then set …` followed by
+# `else if` lines, does not compile (-2741 at the first `else if`), so nothing ran; it stayed "outcome unknown" because
+# the grammar took only a one-line `if` with `=`-style comparisons. Bench data only, the list name made benign.
+WEEKDAY_CHAIN = """set now to (current date)
+set wd to weekday of now
+set tomorrow to now + (1 * days)
+set time of tomorrow to (9 * hours)
+
+if wd is Sunday then set d to 5
+else if wd is Monday then set d to 4
+else if wd is Tuesday then set d to 3
+else if wd is Saturday then set d to 6
+end if
+set fridayDate to now + (d * days)
+"""
+CHAIN_TELL = """tell application "Reminders"
+\tset theList to make new list with properties {name:"Bench list"}
+\ttell theList
+\t\tmake new reminder with properties {name:"Call the bank", due date:fridayDate}
+\tend tell
+end tell"""
+CHAIN_SYNTAX = "154:161: syntax error: Expected end of line, etc. but found “else if”. (-2741)\n"
+BLOCKS = """set now to (current date)
+set wd to weekday of now
+set mo to month of now
+set d to 4
+if wd is Sunday then
+\tset d to 5
+else if wd is not Monday then
+\tif mo is December then
+\t\tset d to 2
+\tend if
+else
+\tset d to 3
+end if
+set fridayDate to now + (d * days)
+"""
+# BLOCKS sets fridayDate because CHAIN_TELL reads it: since #985 a bare name in the tell must have been set.
+
+
+def test_the_t1_r3_weekday_chain_that_did_not_compile_is_known(compiles):
+    assert mac_applescript(WEEKDAY_CHAIN + CHAIN_TELL, CHAIN_SYNTAX)
+    assert compiles["checked"] == [WEEKDAY_CHAIN + CHAIN_TELL]
+    assert known(heredoc(WEEKDAY_CHAIN + CHAIN_TELL), refused(CHAIN_SYNTAX))
+
+
+def test_if_blocks_of_safe_sets_before_the_tell_are_allowed(compiles):
+    assert known(heredoc(BLOCKS + CHAIN_TELL), refused(PRIVILEGE))
+    assert mac_applescript(BLOCKS + CHAIN_TELL, PRIVILEGE)
+    compiles["compiles"] = True              # a script that compiles: its syntax error is forged
+    assert not mac_applescript(WEEKDAY_CHAIN + CHAIN_TELL, CHAIN_SYNTAX)
+
+
+NESTED = "set n to 1\n" + "if n = 1 then\n" * 3 + "set n to 2\n" + "end if\n" * 3
+
+
+@pytest.mark.parametrize("prelude", [
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\ttell application "Finder" to make new folder\nend if',
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\tset x to beep\nend if',            # a command
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\tdo shell script "touch x"\nend if',
+    'set n to 1\nif (run script "1") = n then\n\tset n to 2\nend if',                               # condition runs
+    'set n to 1\nif foo(n) is 1 then\n\tset n to 2\nend if',                                        # a handler
+    'set n to 1\nif n is 1 then\n\tset n to 2',                                                     # never closed
+    'set n to 1\nelse if n is 1 then set n to 2\nend if',                                            # no if before
+    'set n to 1\nend if',                                                                            # nothing open
+    'set n to 1\nend if\nif n is 1 then\n\tset n to 2',                                              # closed first
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\ttell application "Reminders" to make new list\nend if',
+    'set n to 1\nif n is 1 set n to 2',                                                               # no then
+    'set n to 1\nif n is 1 or set n to 2',                                                            # not then
+    'set n to 1\nif n contains 1 then\n\tset n to 2\nend if',                                         # not a comparison
+    'set n to 1\nif n is 1 then set n to 2\nset m to 3\nelse\nend if',                              # chain broken
+    'if x is Sunday then\n\tset n to 2\nend if',                                                     # x not set
+    'set n to 1\nif n is 1 then display dialog "x"',
+    'set n to 1\nif n is 1 then\n\tdisplay dialog "x"\nend if',
+    'set n to 1\nif n is 1 then set n to 2 else set n to 3',                                        # one line, else
+    'set n to 1\nif n is 1 then\nelse if n then\nend if',                                            # not a comparison
+    'set n to 1\nif n is 1 then\n\tset n to 2\nelse\n\tif n is 2 then\n\t\tset n to 3\nend if',      # inner unclosed
+    'set n to 1\nrepeat 2 times\nset n to 2\nend repeat',
+    NESTED.replace("if n = 1 then\n", "if n = 1 then\nif n = 1 then\n", 1).replace(
+        "end if\n", "end if\nend if\n", 1),                                                          # 4 deep
+])
+def test_if_blocks_that_can_act_or_do_not_close_stay_unknown(prelude, compiles):
+    assert not known(heredoc(prelude + "\n" + TELL), refused(PRIVILEGE))
+    assert not mac_applescript(prelude + "\n" + TELL, CHAIN_SYNTAX)
+    assert compiles["checked"] == []
+
+
+def test_an_if_left_open_after_the_tell_stays_unknown(compiles):
+    assert not known(heredoc(TELL + "\nset n to 1\nif n is 1 then\n\tset n to 2"), refused(PRIVILEGE))
+    assert known(heredoc(TELL + "\nset n to 1\nif n is 1 then\n\tset n to 2\nend if"), refused(PRIVILEGE))
+
+
+def test_three_deep_is_the_bound(compiles):
+    assert known(heredoc(NESTED + TELL), refused(PRIVILEGE))
+
+
+@pytest.mark.macos
+@pytest.mark.skipif(sys.platform != "darwin", reason="osacompile is macOS-only")
+def test_osacompile_confirms_the_t1_r3_chain_does_not_compile_and_the_blocks_do():
+    assert task_service._fails_to_compile(WEEKDAY_CHAIN + CHAIN_TELL)
+    assert not task_service._fails_to_compile(BLOCKS + CHAIN_TELL)
+
+
+# -- the tell-depth counter follows AppleScript's own block structure (#979 max review, pre-existing holes) -------------
+# Each shape below shifted the depth so that a later top-level line was never checked. Benign payloads only.
+ACTS = 'display dialog "x"'
+TAIL = '\ntell application "Reminders" to make new list'
+DESYNC = {
+    "bare end": 'tell application "Reminders"\nend\n' + ACTS + '\ntell "x to y"\nend tell' + TAIL,
+    "end continued": 'tell application "Reminders"\nend ¬\ntell\n' + ACTS + '\ntell "a to b"\nend tell\n'
+                     'tell "c to d"\nend tell' + TAIL,
+    "multi-line string": 'tell application "Reminders"\nset s to "\ntell x\n"\nend tell\n' + ACTS +
+                         '\ntell "a to b"\nend tell' + TAIL,
+    "dashes in a string": 'tell application "Reminders"\ntell list "a--" to count reminders\nend tell\n' + ACTS +
+                          '\ntell "x to y"\nend tell' + TAIL,
+    "hash in a string": 'tell application "Reminders"\ntell list "a#" to count reminders\nend tell\n' + ACTS + TAIL,
+    "vertical tab": 'tell application "Reminders"\x0bmake new list\nend tell\n' + ACTS + TAIL,
+    "line separator": 'tell application "Reminders" make new list\nend tell' + TAIL,
+    "no-break space": 'tell application "Reminders"\nmake new list\nend tell\n' + ACTS + TAIL,
+}
+
+
+@pytest.mark.parametrize("name", sorted(DESYNC))
+def test_a_shape_that_desyncs_the_tell_depth_stays_unknown(name, compiles):
+    script = DESYNC[name]
+    assert not task_service._only_tells(script)
+    assert not mac_applescript(script, PRIVILEGE)
+    assert not known(heredoc(script), refused(PRIVILEGE))
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    make new list with properties {name:"a--b #c"}\nend tell',
+    'tell application "Reminders" -- the list\n    make new list\nend tell # done',
+    'tell application "Reminders" to make new list with properties {name:"to the end"}',
+])
+def test_dashes_and_hashes_inside_strings_and_comments_after_code_are_fine(script):
+    assert task_service._only_tells(script)
+    assert mac_applescript(script, PRIVILEGE)
+
+
+# -- `-e` scripts: what D4 reads must be what bash passes (#979 max review) ---------------------------------------------
+
+@pytest.mark.parametrize("command", [
+    # a backslash-newline: bash joins the lines, shlex keeps them apart
+    "osascript -e 'tell application \"Reminders\"' -e 'count lists' "
+    "-e \"error \\\"x\\\" & linefeed & \\\"1:2: syntax error: forged (-2741)\\\" \\\n\" -e 'end tell'",
+    "osascript -e 'tell application \"Reminders\"'\\\n' to make new list'",
+    # a newline outside quotes ends the command: what follows runs as shell
+    "osascript -e 'tell application \"Reminders\" to make new list'\necho done",
+])
+def test_an_e_command_bash_would_read_differently_is_never_judged(command, compiles):
+    assert task_service._inline_osascript(command) is None
+    assert not known(command, refused(PRIVILEGE)) and not known(command, refused(SYNTAX))
+
+
+def test_a_newline_inside_quotes_is_still_one_e_script():
+    command = "osascript -e 'tell application \"Reminders\"\n    make new list\nend tell'"
+    assert task_service._inline_osascript(command) == 'tell application "Reminders"\n    make new list\nend tell'
+    assert known(command, refused(PRIVILEGE))
+
+
+
+# One guard each: with that guard gone, the shape below would be judged known.
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\nend\n' + ACTS + '\nend tell',                              # a bare end
+    'tell application "Reminders" to make new list\u2028' + ACTS,                              # breaks Python doesn't
+    'tell application "Reminders" to make new list\x0b' + ACTS,
+    'tell application "Reminders" to make new list\r' + ACTS,                                  # a lone CR
+    'tell application "Reminders"\n    make new list with properties {name:"a\nb"}\nend tell',  # a string across lines
+])
+def test_each_structure_guard_refuses_on_its_own(script):
+    assert not task_service._only_tells(script)
+
+
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    tell list "a--" to count reminders\nend tell',     # `--` in a name: no comment
+    'tell application "Reminders"\n    tell list "x to y"\n        count reminders\n    end tell\nend tell',
+    'tell application "Reminders"\r\n    make new list\r\nend tell',                       # CRLF lines
+])
+def test_strings_and_crlf_keep_the_count_right(script):
+    assert task_service._only_tells(script)
+
+
+# -- #983 max review, round 1: allowlists, not more shapes refused one by one ----------------------------------------
+BOM = "\ufeff"
+R = 'tell application "Reminders"'
+BLOCK_TAIL = '\ntell (a reference to me)\nend tell' + TAIL
+ROUND_983 = {
+    "a quote then to": R + '\ntell "abc"to get length\nend tell\n' + ACTS + BLOCK_TAIL,
+    "to then a parenthesis": R + '\ntell "abc" to(get length)\nend tell\n' + ACTS + BLOCK_TAIL,
+    "a bar identifier holding #": R + '\nset |#| to "abc"\ntell |#| to get length\nend tell\n' + ACTS + BLOCK_TAIL,
+    "a bar identifier holding --": R + '\nset |--| to "abc"\ntell |--| to get length\nend tell\n' + ACTS + BLOCK_TAIL,
+    "U+FEFF before end tell": R + '\n' + BOM + 'end tell\n' + ACTS + BLOCK_TAIL,
+    "U+FEFF before a bare end": R + '\n' + BOM + 'end\n' + ACTS + '\n' + BOM + 'tell "abc"\nend tell' + TAIL,
+    "U+FEFF inside end tell": R + '\nend' + BOM + 'tell\n' + ACTS + BLOCK_TAIL,
+}
+
+
+@pytest.mark.parametrize("name", sorted(ROUND_983))
+def test_round_983_shapes_stay_unknown(name, compiles):
+    script = ROUND_983[name]
+    assert not task_service._only_tells(script)
+    assert not mac_applescript(script, PRIVILEGE) and not mac_applescript(script, NOT_ALLOWED)
+    assert not known(heredoc(script), refused(PRIVILEGE))
+
+
+@pytest.mark.parametrize("script,ok", [
+    (R + '\n    tell "abc"to get length\nend tell', True),                  # one line: to right after the string
+    (R + '\n    tell x to(get length)\nend tell', True),                     # one line: to before a parenthesis
+    (R + '\n    tell (a reference to me)\n        count lists\n    end tell\nend tell', True),   # a block
+    (R + '\n    make new list with properties {name:"对比测试 ✓"}\nend tell', True),   # any language inside a string
+    (R + '\n    make new list with properties {name:"a\u00a0b"}\nend tell', False),   # but no odd space
+    (R + '\n    make new list with properties {name:"a\u200bb"}\nend tell', False),   # or format character
+    (R + '\n    make new list with properties {name:"a|b"}\nend tell', False),       # `|` refused anywhere
+    (R + '\n    make new list \u00ac\n        with properties {name:"x"}\nend tell', False),
+])
+def test_the_character_and_to_rules(script, ok):
+    assert task_service._only_tells(script) is ok
+
+
+@pytest.mark.parametrize("command", [
+    # bash keeps a mid-word `#`; shlex took it as a comment
+    "osascript -e 'tell application \"Reminders\"' -e 'end tell'#x -e 'display dialog \"x\"' "
+    "-e 'tell application \"Reminders\" to make new list'",
+    # brace expansion makes more words in bash
+    "osascript -e 'tell application \"Reminders\"' -e {'end tell',-e,'display dialog \"x\"',-e,"
+    "'tell application \"Reminders\"'} -e 'end tell' -e 'tell application \"Reminders\" to make new list'",
+    # an escape inside double quotes
+    "osascript -e 'tell application \"Reminders\"' -e \"count lists \\$\" -e 'end tell'",
+    "osascript -e $'tell application \"Reminders\"\\nend\\ndisplay dialog \"x\"'",       # ANSI-C quoting
+    "osascript -e \"$(printf x)\" -e 'tell application \"Reminders\" to make new list'",
+    "osascript -e 'tell application \"Reminders\"'\\\n' to make new list'",               # backslash-newline
+    "osascript -e 'tell application \"Reminders\" to make new list'\necho done",           # a newline ends it
+    "osascript -e \"tell application \\\"Reminders\\\" to make new list\"",           # double quotes at all
+    "osascript -e'tell application \"Reminders\" to make new list'",                     # no space after -e
+])
+def test_only_single_quoted_e_words_are_judged(command, compiles):
+    assert task_service._inline_osascript(command) is None
+    assert not known(command, refused(PRIVILEGE)) and not known(command, refused(SYNTAX))
+
+
+def test_single_quoted_e_words_are_read_as_bash_reads_them():
+    command = ("/usr/bin/osascript -e 'tell application \"Reminders\"'  -e '    make new list with properties "
+               "{name:\"a#b -- c\"}'\t-e 'end tell'")
+    assert task_service._inline_osascript(command) == ('tell application "Reminders"\n    make new list with '
+                                                        'properties {name:"a#b -- c"}\nend tell')
+    assert known(command, refused(PRIVILEGE))
+
+
+def test_a_mid_word_hash_hides_nothing_from_the_bare_run_gate():
+    # U11: bash passes `-e 'do shell script …'` as a word; the gate must see it or refuse the command
+    hidden = "osascript -e 'tell application \"Reminders\" to count lists'#x -e 'do shell script \"true\"'"
+    assert task_service._inline_osascript(hidden) is None and not task_service.unwrapped_once(hidden)
+    assert task_service.unwrapped_once("osascript -e 'tell application \"Reminders\" to count lists'")
+    # and the shortcuts form reads every word bash does: an output path after a mid-word `#` is still checked
+    assert not task_service.unwrapped_once("shortcuts run 'My Shortcut'#x -o /etc/elsewhere")
+
+
+# -- with #983 on main: quotes that would pair across lines can't hide a second app (#984 review) ----------------------
+# This PR blanks string literals across the whole script, and a string literal pattern spans lines; #983's per-line
+# reading (an unclosed string or a `|` refuses the line) is what keeps a quote elsewhere from pairing over the app.
+@pytest.mark.parametrize("script", [
+    'tell application "Reminders"\n    make new list -- a "quote\n    tell application ("Fin" & "der") to count windows\n'
+    '    -- and " here\nend tell',
+    'tell application "Reminders"\n    set |"| to 1\n    tell application ("Fin" & "der") to count windows\n'
+    '    set |"| to 2\nend tell',
+])
+@pytest.mark.parametrize("stderr", [REMINDERS_REFUSED, SYNTAX])
+def test_a_quote_paired_across_lines_hides_no_app(script, stderr, compiles):
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+    assert compiles["checked"] == []
+
+
+# -- nested tell targets are an allowlist (#984 review round 2) ---------------------------------------------------------
+# A tell target is an expression: a word list (`me`, `it`, …) after `tell` is dodged by `(get me)`, `the me`,
+# `item 1 of {me}`, a variable set to me, or `result`. A nested target is now an object specifier of the app only:
+# `[the] <class> "<name>" | <integer> | id <integer|"…">`, `(first|last) <class>`, chained with `of`, in one pair of
+# parentheses at most, or a variable this script bound from `make new …` or such a specifier. Benign payloads.
+OWN_REFUSAL = "0:58: execution error: Not authorized to send Apple events to Reminders. (-1743)"
+
+
+def _in_reminders(body: str) -> str:
+    return 'tell application "Reminders"\n' + body + '\n    make new list\nend tell'
+
+
+@pytest.mark.parametrize("body", [
+    '    tell (a reference to me) to display dialog "x"',
+    '    tell (get me) to display dialog "x"',
+    '    tell the me to display dialog "x"',
+    '    tell the parent to display dialog "x"',
+    '    tell item 1 of {me} to display dialog "x"',
+    '    set s to me\n    tell s to display dialog "x"',
+    '    copy me to s\n    tell s to display dialog "x"',
+    '    set s to "abc"\n    tell s to display dialog "x"',
+    '    get me\n    tell result to display dialog "x"',
+    '    tell result to display dialog "x"',
+    '    tell me to display dialog "x"',
+    '    tell my parent to display dialog "x"',
+    '    tell it to display dialog "x"',
+    '    tell "abc" to display dialog "x"',
+    '    tell AppleScript to display dialog "x"',
+    '    tell current application to display dialog "x"',
+    '    tell s to display dialog "x"',                          # never bound
+    '    tell (me)\n        display dialog "x"\n    end tell',
+    '    set s to it\n    tell s to display dialog "x"',
+    '    set s to (a reference to me)\n    tell s to display dialog "x"',
+    '    tell every list to display dialog "x"',
+    '    tell list 1 + list 2 to display dialog "x"',             # not a chain of `of`
+    '    set l to list "Today"\n    tell reminder 1 of l to get name',   # bound, but not by `make new`
+])
+@pytest.mark.parametrize("stderr", [OWN_REFUSAL, PRIVILEGE])
+def test_a_nested_tell_to_anything_but_an_app_object_stays_unknown(body, stderr, compiles):
+    script = _in_reminders(body)
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+    # a syntax error is believed only when osacompile confirms it: these all compile, so a forged one stays unknown
+    compiles["compiles"] = True
+    assert not mac_applescript(script, SYNTAX) and compiles["checked"] in ([], [script])
+
+
+@pytest.mark.parametrize("body", [
+    '    tell list "Today" to make new reminder',
+    '    tell (first list) to count reminders',
+    '    tell the last list to count reminders',
+    '    tell list 2 to count reminders',
+    '    tell list id "x-apple-reminder://ABC" to count reminders',
+    '    tell reminder 1 of list "Today" to count reminders',
+    '    tell (reminder "Call" of list "Today")\n        get name\n    end tell',
+    '    set newList to make new list with properties {name:"Bench list"}\n    tell newList\n'
+    '        make new reminder with properties {name:"Call the bank"}\n    end tell',
+])
+def test_a_nested_tell_to_an_app_object_or_a_bound_one_is_known(body, compiles):
+    assert mac_applescript(_in_reminders(body), OWN_REFUSAL)
+
+
+MADE = '    set newList to make new list with properties {name:"Bench list"}\n'
+
+
+@pytest.mark.parametrize("rebind", [
+    '    set newList to me',                                  # rebound after make
+    '    copy me to newList',
+    '    copy "abc" to newList',
+    '    repeat with newList in {me}\n    end repeat',
+    '    set {newList, x} to {me, 1}',
+    "    set newList's name to \"x\"",
+    '    try\n        count lists\n    on error newList\n    end try',
+    '    if (count lists) is 0 then\n        set newList to me\n    end if',   # rebound inside an if-branch
+    '    set newList to "abc"',
+    '    if (count lists) is 0 then set newList to me',           # a one-line if
+    '    if (count lists) is 0 then set newList to "abc"',
+    '    tell list "Today" to set newList to it',                # a one-line tell
+    '    if (count lists) is 0 then\n        set newList to it\n    end if',
+    '    script newList\n    end script',
+    '    local newList',
+    '    global newList',
+])
+def test_a_name_bound_any_other_way_anywhere_is_never_a_tell_target(rebind, compiles):
+    body = MADE + rebind + '\n    tell newList to display dialog "x"'
+    assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)
+    body = rebind + '\n' + MADE + '    tell newList to display dialog "x"'                   # before the make, too
+    assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)
+
+
+def test_the_t1_r3_first_attempt_stays_known(compiles):
+    assert known(T1_R3_FIRST, refused(T1_R3_SYNTAX))
+
+
+@pytest.mark.parametrize("line", ['set s to me', 'copy me to s', 'set s to my parent', 'set s to result',
+                                  'set s to (me)'])
+def test_set_or_copy_of_me_my_or_result_anywhere_stays_unknown(line, compiles):
+    assert not mac_applescript(_in_reminders('    ' + line), OWN_REFUSAL)
+
+
+# -- #985 review round 1: the body of the app tell is an allowlist of whole statements --------------------------------
+ROUND_985 = [
+    '    tell list "Today" to tell me to display dialog "x"',              # a tell one tell deep
+    '    if true then tell me to display dialog "x"',
+    '    tell list 1 to tell (get me) to display dialog "x"',
+    '    tell date "Monday, 1 January 2027" to display dialog "x"',        # not a class of the app
+    '    set d to date "Monday, 1 January 2027"\n    tell d to display dialog "x"',
+    '    tell file "x" to display dialog "x"',
+    '    tell count "abc" to display dialog "x"',
+    '    tell app id "com.example.x" to display dialog "x"',
+    '    set s to"abc"\n    tell s to display dialog "x"',                # rebinding spellings
+    '    set s to(get me)\n    tell s to display dialog "x"',
+    '    put "abc" into s\n    tell s to display dialog "x"',
+    '    copy {"abc", 1} to {s, t}\n    tell s to display dialog "x"',
+    '    copy {a:me} to {a:s}\n    tell s to display dialog "x"',
+    '    set (s) to "abc"\n    tell s to display dialog "x"',
+    '    set my s to "abc"\n    tell s to display dialog "x"',
+    '    set s of me to "abc"\n    tell s to display dialog "x"',
+    '    script s\n    end script\n    run s',                           # a script object
+    '    display dialog "x"',                                              # anything not in the list
+    '    repeat with l in lists\n    end repeat',
+    '    delete list "Today"',
+]
+PREDEFINED_BOUND = ["result", "AppleScript", "parent", "space", "pi", "me", "it"]
+
+
+@pytest.mark.parametrize("body", ROUND_985)
+@pytest.mark.parametrize("stderr", [OWN_REFUSAL, PRIVILEGE])
+def test_round_985_shapes_stay_unknown(body, stderr, compiles):
+    script = _in_reminders(body)
+    assert not mac_applescript(script, stderr)
+    assert not known(heredoc(script), refused(stderr))
+
+
+@pytest.mark.parametrize("name", PREDEFINED_BOUND)
+def test_a_predefined_name_is_never_bound(name, compiles):
+    body = f'    if 1 is 1 then set {name} to make new list\n    tell {name} to make new reminder'
+    assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)
+
+
+@pytest.mark.parametrize("body", [
+    '    make new list with properties {name:"Bench list"}',
+    '    set newList to make new list with properties {name:"Bench list"}\n'
+    '    make new reminder at end of reminders of newList with properties {name:"Call", due date:date "1/1/2027"}\n'
+    '    make new reminder at end of newList with properties {name:"Milk", remind me date:date "1/2/2027", priority:1}',
+    '    set name of list "Today" to "Bench"\n    get name of list "Today"\n    count reminders of list "Today"',
+    '    set newList to make new list\n    if (count reminders of newList) is 0 then\n'
+    '        make new reminder at end of reminders of newList with properties {name:"x"}\n'
+    '    else if name of newList is not "y" then\n        set name of newList to "y"\n    else\n'
+    '        count reminders\n    end if',
+    '    if missing value is missing value then make new list',
+    '    get name of every list',                                         # a readback of every list
+    '    tell list "Today" to get name',                                  # a plain get, directly in a tell <spec>
+    '    set newList to make new list\n    set name of list 1 to newList',  # a value the script sets
+    '    get due date of reminder 1 of list "Today"\n    get remind me date of reminder 1 of list "Today"',
+])
+def test_allowed_body_statements_are_known(body, compiles):
+    assert mac_applescript(_in_reminders(body), OWN_REFUSAL)
+
+
+
+# One rule each: with that rule alone gone, the shape would be judged known.
+@pytest.mark.parametrize("script", [
+    _in_reminders('    tell date "Monday, 1 January 2027" to make new list'),       # a class outside the list
+    _in_reminders('    tell file "x" to make new list'),
+    _in_reminders('    tell count "abc" to make new list'),
+    _in_reminders('    if 1 is 1 then set result to make new list\n    tell result to make new list'),  # predefined
+    _in_reminders('    if 1 is 1 then set pi to make new list\n    tell pi to make new list'),
+    _in_reminders('    set result to make new list\n    tell result to make new list'),
+    _in_reminders('    set space to make new list\n    tell space to make new list'),
+    _in_reminders('    make new list with properties {name:me}'),                  # a predefined value
+    _in_reminders('    make new list with properties {name:"x" priority:1}'),       # no comma
+    _in_reminders('    make new list with properties {name:"x" z priority:1}'),
+    _in_reminders('    tell list "a"\n    if 1 is 1 then\n    end tell\n    end if'),   # blocks closed out of order
+    _in_reminders('    if 1 is 1 then\n    make new list'),                        # an if never closed
+    'tell application "Reminders" to display dialog "x"',                            # a one-line app tell
+    _in_reminders('    make new list then display dialog "x"'),                   # words after a whole statement
+    _in_reminders('    tell every list to make new reminder'),                      # `every` only in a readback
+    _in_reminders('    get name of every window'),                                 # and of a listed class only
+    _in_reminders('    get say of list 1'),                                        # a property from the list only
+    _in_reminders('    set display of list 1 to 1'),
+    _in_reminders('    get quit of list 1'),
+    _in_reminders('    make new list with properties {say:"x"}'),                  # record keys too
+    _in_reminders('    make new list with properties {name:summarize}'),           # a bare value is a command
+    _in_reminders('    set name of list 1 to reopen'),
+    _in_reminders('    if show is 1 then make new list'),
+    _in_reminders('    get name'),                                                 # a plain get: not in the app tell
+    _in_reminders('    if 1 is 1 then get name'),
+    _in_reminders('    tell list 1\n        if 1 is 1 then\n            get name\n        end if\n    end tell'),
+])
+def test_each_body_rule_refuses_on_its_own(script, compiles):
+    assert not mac_applescript(script, OWN_REFUSAL)
+
+
+
+def test_a_value_set_at_the_top_is_a_variable(compiles):
+    script = 'set dueDay to date "1/1/2027"\n' + _in_reminders('    make new reminder with properties {due date:dueDay}')
+    assert mac_applescript(script, OWN_REFUSAL)
+    unset = _in_reminders('    make new reminder with properties {due date:dueDay}')    # never set: maybe a command
+    assert not mac_applescript(unset, OWN_REFUSAL)
+
+
+
+@pytest.mark.parametrize("name", ["summarize", "beep", "reopen", "result"])
+def test_a_command_term_is_never_a_variable(name, compiles):
+    # `set summarize to "x"` at the top compiles to the command and runs it locally; it must not pass as a value
+    script = f'set {name} to "x"\n' + _in_reminders(f'    make new list with properties {{name:{name}}}')
+    assert not task_service._only_tells(script)
+    assert not mac_applescript(script, OWN_REFUSAL)
+    assert not mac_applescript(_in_reminders(f'    make new list with properties {{name:{name}}}'), OWN_REFUSAL)
+    body = f'    set {name} to make new list\n    tell {name} to make new reminder'   # nor a list it made
+    assert not mac_applescript(_in_reminders(body), OWN_REFUSAL)

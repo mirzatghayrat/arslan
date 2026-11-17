@@ -422,10 +422,10 @@ def test_a_background_card_is_answered_over_the_socket_and_resent_on_reconnect(a
         ws.receive_json()
         waiting = app_client.portal.start_task_soon(_job_ask, "main", frame)
         # broadcast at once, marked as a job's card (the UI hides "remember" for it)
-        assert ws.receive_json() == frame | {"background": True}
+        assert ws.receive_json() == frame | {"background": True, "phone_can_approve": True}     # CAP11
     with app_client.websocket_connect("/ws/arslan/main") as ws:   # a tab that opened later
         replay = [ws.receive_json() for _ in range(3)]
-        assert frame | {"background": True} in replay, "a pending background card is shown to a reconnecting tab"
+        assert frame | {"background": True, "phone_can_approve": True} in replay, "a pending background card is shown to a reconnecting tab"
         ws.send_json({"type": "confirm_run_command", "call_id": "bg-card"})   # wrong kind: ignored
         ws.send_json({"type": "confirm_schedule", "call_id": "bg-card"})
         assert waiting.result(timeout=5) is True

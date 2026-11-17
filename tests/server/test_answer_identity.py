@@ -3,7 +3,8 @@
 Root cause: assemble_working_context flattened spawn_summary (a spawn's relayed output,
 often first-person) into a generic 'assistant' turn, so the answer model continued the
 spawn's persona ("我是 Mermer" / "我是领英智囊"). Two-part fix:
-  A) attribute spawn_summary turns as relayed spawn output (not Arslan's own voice);
+  A) attribute spawn_summary turns as relayed spawn output (not Arslan's own voice); since C7c-5c the
+     attribution is in the data (0103 prefixes those rows; tests/server/test_migration_0103.py);
   B) lock Arslan's identity in the system prompt so it never adopts a teammate's persona.
 """
 import pytest
@@ -34,21 +35,6 @@ def test_arslan_system_is_one_agent_with_no_team():
     assert "arslan" in s and "user's language" in s
     stable = arslan._ANSWER_STABLE_PREFIX.lower()
     assert not any(word in stable for word in ("spawn", "specialist", "teammate", "your team", "分身"))
-
-
-@pytest.mark.asyncio
-async def test_spawn_output_attributed_in_history(maker):
-    """Fix A: a spawn_summary turn is framed as relayed spawn output, not Arslan's own voice."""
-    from server.orchestrator import memory
-
-    await memory.add_message("c1", "user", "出来mermer")
-    await memory.add_message("c1", "spawn_summary", "[Mermer] 你好，我是 Mermer 你的个人助理")
-    ctx = await memory.assemble_working_context("c1")
-    spawn_turn = ctx["history"][-1]
-    assert spawn_turn["role"] == "assistant"
-    # must carry a spawn-attribution marker so the model knows it was a teammate, not Arslan
-    assert "spawn" in spawn_turn["content"].lower()
-    assert spawn_turn["content"] != "[Mermer] 你好，我是 Mermer 你的个人助理"
 
 
 @pytest.mark.asyncio

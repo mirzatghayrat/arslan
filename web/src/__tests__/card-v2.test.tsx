@@ -394,7 +394,8 @@ describe("the model's why is the question (§A4)", () => {
   it("a card with words of its own keeps them and shows the frame's why as Arslan says; a blank why shows nothing", () => {
     render(<AskSlot send={vi.fn()} />);
     frame({ ...ACTION, kind: "desktop_app", target: "Notes", why: "Tidy the notes" });
-    expect(screen.getByTestId("action-title")).toHaveTextContent('hands.title.desktop_app:{"target":"Notes"}');
+    // ACM: an `app` card's heading is the server's own (localized there), not the web's `hands.title.*` words.
+    expect(screen.getByTestId("action-title")).toHaveTextContent("Use WeChat?");
     expect(screen.getByTestId("action-said")).toHaveTextContent("Tidy the notes");
     frame({ ...ACTION, call_id: "a2", kind: "desktop_app", target: "Notes", why: "   " });
     fireEvent.click(screen.getByLabelText("kit.next"));                        // a2 waits behind a1

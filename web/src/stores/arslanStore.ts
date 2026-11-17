@@ -504,10 +504,8 @@ function makeActions(set: SetState, get: GetState) {
         process?: ProcessSummary;
         files?: StoredArtifact[];
       }): ArslanThreadItem => {
-        // C7c-4: an old expert's stored answer (`spawn_summary`, still in some databases until C7c-5's
-        // migration turns those rows into plain `arslan` replies) renders as an Arslan reply now, as it will
-        // after the migration. The row's fields are unchanged. DELETE-BY: v0.1.64, with C7c-5 (the migration).
-        const reply = row.role === "arslan" || row.role === "spawn_summary";
+        // C7c-5c: migration 0103 turned the old experts' `spawn_summary` rows into plain `arslan` replies.
+        const reply = row.role === "arslan";
         return {
           id: row.message_id,
           kind: "message",

@@ -99,7 +99,6 @@ async def add_message(
     content: str,
     *,
     display_content: str | None = None,
-    spawn_id: int | None = None,
     job_outcome: str | None = None,
     source: str | None = None,
     run_id: int | None = None,
@@ -118,7 +117,7 @@ async def add_message(
     from server.db.companion_models import ConversationContext
     from server.services import sub_sessions
     row = {"conversation_id": conversation_id, "role": role, "content": content, "display_content": display_content,
-           "spawn_id": spawn_id, "job_outcome": job_outcome, "source": source, "run_id": run_id}
+           "job_outcome": job_outcome, "source": source, "run_id": run_id}
     column = ArslanMessage.__table__.c
     tombstone = select(ConversationContext.id).where(ConversationContext.id == conversation_id,
                                                      ConversationContext.kind == sub_sessions.DELETED)
@@ -168,16 +167,7 @@ async def assemble_working_context(conversation_id: str, *, budget: int | None =
         text = m.content if index >= kept else _masked(m.content)
         if m.role == "user":
             history.append({"role": "user", "content": text})
-        elif m.role == "spawn_summary":
-            # A specialist spawn's relayed output. Frame it in the third person so the answer
-            # model treats it as a teammate's message and never adopts the spawn's identity
-            # (otherwise Arslan continues a spawn's first-person voice, e.g. "我是 Mermer").
-            # Model context only, never a frame or history row. It stays while such rows exist: DELETE-BY: v0.1.64,
-            # with C7c-5 (its migration turns them into plain `arslan` replies).
-            history.append(
-                {"role": "assistant", "content": f"(relayed output from a specialist spawn) {text}"}
-            )
-        else:  # arslan's own turns pass through verbatim
+        else:  # arslan's own turns pass through verbatim (0103 turned the old `spawn_summary` rows into these)
             history.append({"role": "assistant", "content": text})
     # Compaction is model-backed and may fail. Prompt admission is deterministic
     # regardless: keep a bounded summary and the newest turns without deleting

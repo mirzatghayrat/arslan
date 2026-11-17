@@ -5,6 +5,7 @@ executor. A gate answers with the refusal to record (enrolling, with its card's 
 is `command_gate.check`, which answers with its plan instead."""
 from __future__ import annotations
 
+import re
 import uuid
 from pathlib import Path
 
@@ -91,14 +92,101 @@ async def _held_for_later(args) -> Path | None:
     return workspace_paths.held_for_later(args.get("path"), root, walk_root=walk)
 
 
-async def _run_later_card(path: Path, conversation_id: str | None) -> dict | None:
+#: ACM: how much of the text a run-later card quotes from one argument of edit_file (the text it replaces).
+_REPLACED_MAX = 300
+#: ACM review round 1: how much of the path, and of each plist line but the program's, a run-later card shows; the
+#: program's line (`_RUNS`) gets the rest of the card's room before the text written.
+_PATH_MAX = 1000
+_LINE_MAX = 400
+_RUNS = "Runs: "
+#: What each line of the text written starts with on the card, so no line of it reads as one of the card's own.
+_WRITTEN = "│ "
+
+
+def _capped(line: str, limit: int) -> str:
+    """One line of a run-later card, cleaned as a name is (a line break in it can't make a line of its own) and cut
+    at `limit`, saying how much was cut."""
+    from server.orchestrator import untrusted
+    shown = untrusted.clean_name(line, len(line))
+    return shown if len(shown) <= limit else f"{shown[:limit]} … ({len(shown) - limit} more characters)"
+
+
+def _launch_lines(text: str) -> list[str]:
+    """ACM: a LaunchAgent's or LaunchDaemon's plist (XML or binary), read as launchd reads it: what it is called
+    (Label), what it runs (Program / ProgramArguments) and when (at load, kept alive, every N seconds, on a calendar,
+    when a path changes). [] for anything else, or a plist that doesn't parse."""
+    import plistlib
+    try:
+        plist = plistlib.loads(text.encode("utf-8"))
+    except Exception:  # noqa: BLE001 — not a plist: the card shows the text itself
+        return []
+    if not isinstance(plist, dict):
+        return []
+    lines = []
+    if plist.get("Label"):
+        lines.append(f"Label: {plist['Label']}")
+    args = plist.get("ProgramArguments")
+    runs = " ".join(map(str, args)) if isinstance(args, list) else ""
+    if plist.get("Program") or runs:
+        lines.append(f"{_RUNS}{' '.join(filter(None, (str(plist.get('Program') or ''), runs)))}")
+    env = plist.get("EnvironmentVariables")
+    if isinstance(env, dict) and env:        # review round 1: DYLD_INSERT_LIBRARIES and the like change what runs
+        lines.append("Environment: " + ", ".join(f"{key}={value}" for key, value in env.items()))
+    when =[label for key, label in (("RunAtLoad", "when loaded (at every login)"), ("KeepAlive", "kept running"))
+            if plist.get(key)]
+    when += [f"{label}: {plist[key]}" for key, label in (("StartInterval", "every N seconds"),
+                                                          ("StartCalendarInterval", "on a calendar"),
+                                                          ("WatchPaths", "when these change"),
+                                                          ("QueueDirectories", "when files arrive in"))
+             if plist.get(key)]
+    if when:
+        lines.append("When: " + "; ".join(when))
+    return lines
+
+
+def _run_later_detail(path: Path, tool_key: str, args: dict) -> str:
+    """ACM (P2): what a run-later card shows: the path, then what this one write puts in the file (write_file's
+    content, or edit_file's new text and the text it replaces), so the yes is never given blind. A plist's Label,
+    program, environment and schedule lead (`_launch_lines`). The path and those lines are cleaned as a name is, so
+    neither makes a line of its own (review round 1); the text as shown text is (control, bidi and zero-width
+    characters go, blank runs are cut). The whole fits a card's detail (`protocol.DETAIL_MAX`): what is cut says how
+    much it did not show, and the program's line is cut only past the room the rest leaves it."""
+    from server.orchestrator import untrusted
+    from server.ws import protocol
+    if tool_key == "edit_file":
+        new = str(args.get("new_string") or "")
+        old = untrusted.clean_name(args.get("old_string"), _REPLACED_MAX)
+        head = [_capped(str(path), _PATH_MAX), f"Replaces “{old}” with:"]
+    else:
+        new = str(args.get("content") or "")
+        head = [_capped(str(path), _PATH_MAX), "Writes:"]
+    found = _launch_lines(new)
+    others = [_capped(line, _LINE_MAX) for line in found if not line.startswith(_RUNS)]
+    # 200: the room kept for the text written and its note, past the path, the other lines and their line breaks.
+    room_for_runs = protocol.DETAIL_MAX - 200 - sum(len(line) + 1 for line in (*head, *others))
+    head[1:1] = [_capped(line, room_for_runs) if line.startswith(_RUNS) else _capped(line, _LINE_MAX)
+                 for line in found]
+    text = re.sub(r"\n{3,}", "\n\n", untrusted.cap_blank_runs(untrusted.clean_body(new, shown_only=True), 8))
+    # Review round 2: every line of the text written starts with `_WRITTEN`, so none of it (a plist <string> holding
+    # "\nRuns: /usr/bin/true", or any file that isn't a plist) can pass for one of the card's own lines.
+    text = "\n".join(_WRITTEN + line for line in text.split("\n"))
+    lead = "\n".join(head) + "\n"
+    room = max(protocol.DETAIL_MAX - len(lead) - 80, 0)  # 80: the note that says how much is not shown
+    if len(text) <= room:
+        return lead + text
+    return lead + text[:room] + f"\n… and {len(text) - room} more characters, not shown"
+
+
+async def _run_later_card(path: Path, conversation_id: str | None, tool_key: str = "write_file",
+                          args: dict | None = None) -> dict | None:
     """HR-2a: a once-only `run_later` card for this one write, in every folder (Arslan's own too) and whatever grant
     exists: no grant or rule answers the kind. A yes gives this call's executor the path (`approve_run_later`), which
-    it checks again as it writes. With nobody to ask, `decide` refuses and lists it in the Inbox."""
+    it checks again as it writes. With nobody to ask, `decide` refuses and lists it in the Inbox. ACM: the card
+    shows what is written (`_run_later_detail`)."""
     from server.registry import file_tools
     from server.services import background_jobs, permissions
     decision = await permissions.decide(permissions.Request(
-        kind="run_later", target=str(path), detail=str(path), once_only=True,
+        kind="run_later", target=str(path), detail=_run_later_detail(path, tool_key, args or {}), once_only=True,
         title=f"Write {path.name}? Another program runs it or loads it as settings later."),
         permissions.Context(conversation_id, job_id=background_jobs._inside_job.get()))
     if not decision.allowed:
@@ -177,7 +265,7 @@ async def workspace_write(tool_key, args, turn: ToolTurn) -> dict | None:
         # call; closed: no card, no write.
         return {"ok": False, "error": f"cannot check {args.get('path')}: {exc}"}
     if held is not None:
-        return await _run_later_card(held, conversation_id)
+        return await _run_later_card(held, conversation_id, tool_key, args)
     # T1 workspace writes (P1b): ONE grant per session, not per file. The unit
     # differs from run_command deliberately — a user approving "Arslan may write
     # in my workspace" is answering a question about a capability, not about a

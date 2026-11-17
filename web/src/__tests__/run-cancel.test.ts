@@ -98,7 +98,7 @@ describe("run cancel wiring (S3-M1)", () => {
       type: "history",
       messages: [
         { message_id: 1, role: "user", content: "analyze", spawn_id: null, run_id: null },
-        { message_id: 2, role: "spawn_summary", content: "result", spawn_id: 7, run_id: 555 },
+        { message_id: 2, role: "arslan", content: "result", spawn_id: null, run_id: 555 },
       ],
     } as never);
     const st = useArslanStore.getState();
@@ -107,16 +107,6 @@ describe("run cancel wiring (S3-M1)", () => {
     expect(st.items[1].runId).toBe(555);
     // Unlinked row: null run_id degrades to undefined (no replay entry).
     expect(st.items[0].runId).toBeUndefined();
-  });
-
-  it("C7c-4: a stored spawn_summary row renders as a plain Arslan reply, not an expert bubble", () => {
-    useArslanStore.getState().handleFrame({
-      type: "history",
-      messages: [{ message_id: 3, role: "spawn_summary", content: "old answer", spawn_id: 7, run_id: 9 }],
-    } as never);
-    const [item] = useArslanStore.getState().items;
-    expect(item).toMatchObject({ kind: "message", role: "arslan", content: "old answer", runId: 9 });
-    expect(item).not.toHaveProperty("spawnId");
   });
 });
 

@@ -67,7 +67,8 @@ async def test_a_chat_and_its_job_in_one_conversation_each_put_their_own_run_on_
         await asyncio.wait_for(chat_looked.wait(), 10)
         return "Done: looked"
     monkeypatch.setattr(arslan, "background_body", job_body)
-    window = bg._a_window_answering({"Use Notes?": "task"})   # a job asks on the conversation's windows
+    # A job asks on the conversation's windows (the look's card, ACM's heading).
+    window = bg._a_window_answering({"Read the window of Notes, and click, type and choose in it": "task"})
     run_registry.attach_sink("c1", window)
     try:
         async def chat(emit):

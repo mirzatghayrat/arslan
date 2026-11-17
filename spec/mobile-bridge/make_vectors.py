@@ -229,6 +229,20 @@ CAPPED = [{"conversation_id": f"task-{k:04d}", "title": f"Task {k}", "state": "d
            "spent_usd": 0.01, "needed_you": False} for k in range(TASK_CAP)]
 
 
+CAPABILITY_CARD = {"approval_id": "cap-1", "action": "Add “excel-mcp-server”",
+                   "target": "https://github.com/example/excel-mcp-server", "risk": "install", "task_id": "c1",
+                   "task_title": "Budget", "expires_at": "2026-10-03T00:30:00Z", "perm_kind": "capability",
+                   "source": "https://github.com/example/excel-mcp-server",
+                   "abilities": ["Uses the network", "Needs the key EXCEL_TOKEN"],
+                   "checks": [{"name": "osv", "result": "pass", "detail": "No known advisories in 12 packages"},
+                              {"name": "lock", "result": "pass", "detail": "Locked, sha256 0123456789ab…, 12 packages"},
+                              {"name": "signature", "result": "not_run"},
+                              {"name": "provenance", "result": "a-value-from-later", "detail": "kept as it is"}]}
+SUB_TREE = [{"id": "sub-1", "title": "Draft the outline", "state": "running", "depth": 1, "parent_id": "c3"},
+            {"id": "sub-3", "title": "Check the figures", "state": "waiting", "depth": 2, "parent_id": "sub-1"},
+            {"id": "sub-2", "title": "Find venues", "state": "done", "depth": 1, "parent_id": "c3"}]
+
+
 def messages() -> dict:
     """One plaintext envelope per type, with the kind and notify bit it travels under."""
     s, m = PHONE, MAC
@@ -355,6 +369,32 @@ def messages() -> dict:
         envelope(m, s, "approval.result", {"approval_id": "appr-1", "outcome": "done"}),
         envelope(m, s, "approval.result", {"approval_id": "appr-1", "outcome": "expired",
                                            "detail": "The card timed out on the Mac"}),
+        # §5.13 (CAP11a, 2026-11-15): a capability card, view-only. (a) all three fields and the Mac's no; (b) the same
+        # card with a yes (step b, not sent in v0.1.64); (c) an old Mac's card: no field, `perm_kind` capability, so
+        # not approvable; (d) the phone's no to it. `not_run` and a result named nowhere yet: receivers keep both.
+        envelope(m, s, "approval.request", {**CAPABILITY_CARD, "phone_can_approve": False}),
+        envelope(m, s, "approval.request", {**CAPABILITY_CARD, "phone_can_approve": True}),
+        envelope(m, s, "approval.request", {k: v for k, v in CAPABILITY_CARD.items()
+                                            if k not in ("source", "abilities", "checks")}),
+        envelope(s, m, "approval.answer", {"approval_id": CAPABILITY_CARD["approval_id"], "decision": "deny",
+                                           "auth": "none", "ts": TS}),
+        # §5.13 (SUB5f): the counts on the list, the tree in a conversation's details, one sub-session read
+        # view-only (and one the envelope budget cut), and the Mac's hello that says it does.
+        envelope(m, s, "conversations.result", {"conversations": [
+            {"id": "c3", "title": "Launch plan", "updated_at": TS, "kind": "chat", "state": "working",
+             "sub": {"total": 3, "running": 1, "waiting": 1}}]}),
+        envelope(m, s, "chat.history.result", {"conversation_id": "c3", "messages": [],
+                                               "details": {"model": "claude-sonnet-5-5", "connectors": [],
+                                                           "sub_sessions": SUB_TREE}}),
+        envelope(s, m, "sub_session.history", {"conversation_id": "c3", "sub_session_id": "sub-1", "limit": 50}),
+        envelope(m, s, "sub_session.history.result", {"conversation_id": "c3", "sub_session_id": "sub-1", "messages": [
+            {"id": "m7", "role": "user", "text": "Draft the outline", "ts": TS, "attachments": [], "source": "commander"},
+            {"id": "m8", "role": "assistant", "text": "Outline ready.", "ts": TS, "attachments": []}],
+            "view_only": True}),
+        envelope(m, s, "sub_session.history.result", {"conversation_id": "c3", "sub_session_id": "sub-2", "messages": [],
+                                                      "truncated": True, "view_only": True}),
+        envelope(m, s, "hello", {"app_version": "mac", "protocol_version": 1,
+                                 "capabilities": ["chat", "approvals", "history", "sub_sessions"]}),
         envelope(m, s, "file.offer", {"id": "f1", "name": "jobs.csv", "size": 2048, "mime_type": "text/csv",
                                       "sha256": "0" * 64}),
         envelope(s, m, "file.get", {"file_id": "f1"}),

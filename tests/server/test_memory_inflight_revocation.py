@@ -89,7 +89,7 @@ async def test_deleted_context_stops_real_host_before_next_action(selected, exec
 
 
 @pytest.mark.parametrize("change", [
-    {"status": "paused"}, {"owner_id": "someone-else"}, {"scope_kind": "expert", "scope_id": "other"},
+    {"status": "paused"}, {"owner_id": "someone-else"}, {"scope_kind": "domain", "scope_id": "other"},
     {"confirmed_at": None}, {"confirmation_kind": None}, {"superseded_by": "replacement"},
     {"sensitivity": "sensitive"}, {"version": 99},
 ])

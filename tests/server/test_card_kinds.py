@@ -53,16 +53,18 @@ def test_the_bridge_names_only_kinds_the_server_has():
     # Every label of every `case "a", "b":` line (a case may name several kinds).
     words = {word for labels in re.findall(r"case ((?:\"[a-z_]+\",?\s*)+):", risk.group(0))
              for word in re.findall(r'"([a-z_]+)"', labels)}
-    # §A4's four, and only those. (Mapping a kind the server never sends is dead code: see the docstring.)
-    assert words == {"money", "send", "destructive", "outside"}, (
-        f"FrameMapper.permRisk names {sorted(words)}; expected the four of spec §A4, written `case \"k\": return \"risk\"`")
+    # §A4's four, and `capability` (spec §5.13, CAP11a: shown as `install`). (Mapping a kind the server never sends is
+    # dead code: see the docstring.)
+    assert words == {"money", "send", "destructive", "outside", "capability"}, (
+        f"FrameMapper.permRisk names {sorted(words)}; expected the four of spec §A4 and capability, written "
+        "`case \"k\": return \"risk\"`")
     assert words <= permissions.KINDS, f"FrameMapper.permRisk names kinds the server never sends: {sorted(words - permissions.KINDS)}"
-    guards = set(re.findall(r'perm_kind"\] as\? String == "([a-z_]+)"', text))
-    # What keeps a new capability off the phone. (Dropping `capability` from `permissions.KINDS` also fails at the
-    # import of `permissions`, whose scope-set check is the other guard of this line and of the web's RED_KINDS.)
+    # §5.13's absent rule: a capability card the Mac sent without `phone_can_approve` is not approvable on the phone.
+    # (Dropping `capability` from `permissions.KINDS` also fails at the import of `permissions`.)
+    guards = set(re.findall(r'\(permKind != "([a-z_]+)"\)', text))
     assert guards == {"capability"}, (
-        f"FrameMapper.swift guards on {sorted(guards)}; expected exactly `capability`, written "
-        '`if frame["perm_kind"] as? String == "capability" { return [] }` (this regex reads that spelling only)')
+        f"FrameMapper.swift's absent rule names {sorted(guards)}; expected exactly `capability`, written "
+        '`?? (permKind != "capability")` (this regex reads that spelling only)')
     assert guards <= permissions.KINDS
 
 

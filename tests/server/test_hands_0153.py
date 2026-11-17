@@ -294,7 +294,8 @@ async def test_using_an_app_asks_once_for_looking_and_acting_alike(hands, asks, 
     assert (await hands_tools.DesktopClickExecutor().execute(
         {"app": "Notes", "element": "Save", "ref": "@sfixture0:e3"}))["ok"], "acting asks no second card"
     assert [(f["kind"], f["perm_kind"], f["target"]) for f in seen] == [("desktop_app", "app", "Notes")]
-    assert seen[0]["options"][0] == "task" and seen[0]["title"] == "Use Notes?"
+    assert seen[0]["options"][0] == "task"
+    assert seen[0]["title"] == "Read the window of Notes, and click, type and choose in it"
     found = await look.execute({"app": "Notes", "text": "Save"})
     assert found["ok"] and "button “Save”" in found["text"]
     assert hands.ops("snapshot", "find") == ["snapshot", "snapshot", "find"]
