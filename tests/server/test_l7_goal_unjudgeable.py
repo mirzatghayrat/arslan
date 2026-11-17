@@ -93,6 +93,29 @@ def test_only_a_judgement_about_an_exit_status_or_the_check_passing_is_dropped(d
     assert (goal_command.drafted_checks(json.dumps(draft), _T21_OBJECTIVE, commands=_T21_CHECK) == ()) is dropped
 
 
+@pytest.mark.parametrize("argv,description", [
+    (("make", "test"), "The README makes clear which invoices passed review."),
+    (("go", "test", "./..."), "The summary is a good read and every claim passes a fact check."),
+    (("uv", "run", "pytest"), "Each run summary in runs.md passes a quick skim."),
+    (("test", "-f", "out.csv"), "The latest report passes a reader's sanity test."),
+    (_T21_CHECK[0], "clean/orders.csv passes a reader's check of every column."),     # a data file, not the script
+    (("bash", "check.sh"), "The precheck.sh notes pass a quick review."),        # only part of another word
+], ids=["make-test", "go-test", "uv-run-pytest", "test-f", "data-file", "part-of-a-word"])
+def test_a_bare_program_or_subcommand_word_never_drops_a_criterion(argv, description):
+    # #993 review r2 MF4: only a script file name (with an extension) counts, as a whole word
+    draft = {"criteria": [{"description": description, "kind": "judgement", "path": "README.md"}]}
+    assert len(goal_command.drafted_checks(json.dumps(draft), "Do it.\ncheck: x", commands=(argv,))) == 1
+
+
+@pytest.mark.parametrize("argv,description", [
+    (("bash", "scripts/check.sh"), "check.sh exits 0 on the result."),
+    (("python3", "tests/run_checks.py"), "run_checks.py passes on the fixed ledger."),
+])
+def test_a_script_file_name_with_an_exit_or_pass_still_drops(argv, description):
+    draft = {"criteria": [{"description": description, "kind": "judgement", "path": "README.md"}]}
+    assert goal_command.drafted_checks(json.dumps(draft), "Do it.\ncheck: x", commands=(argv,)) == ()
+
+
 def test_without_the_users_check_line_such_a_judgement_is_kept():
     drafted = goal_command.drafted_checks(json.dumps(_T21_R5_DRAFT), _T21_OBJECTIVE, commands=())
     assert len(drafted) == 3

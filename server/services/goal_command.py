@@ -185,20 +185,23 @@ _CHECK_EXITS = re.compile(r"\b(?:the|this|that|your|user's)\s+(?:(?:provided|giv
                           r"(?:check|command)\s+(?:exits?\b|pass(?:es|ed)?\b|succeed(?:s|ed)?\b|returns?\s+0\b)",
                           re.IGNORECASE)
 _EXIT_WORDS = re.compile(r"\bexit(?:s|ed)?\b|\bpass(?:es|ed)?\b|\bsucceed(?:s|ed)?\b", re.IGNORECASE)
-_INTERPRETERS = {"python", "python3", "node", "bash", "sh", "zsh", "ruby", "perl", "uv", "npx", "deno"}
+_SCRIPT = re.compile(r"[\w.-]+\.(?:py|sh|bash|zsh|js|mjs|cjs|ts|rb|pl|php|lua|r|R|swift|ps1|bat|cmd)")
 
 
 def _restates_a_check(description: str, commands) -> bool:
     """L7-5i: a drafted judgement that restates one of the user's `check:` lines: it says the check or command exits
-    or passes, or it names the check's own program (its script after an interpreter) with an exit or pass."""
+    or passes, or it names one of the check's script files (an argument with a script's extension: `validate.py`,
+    `check.sh`; never its data files, `orders.csv`), as a whole word, with an exit or pass. #993 review r2: never a bare program or subcommand word
+    (`make`, `go`, the `run` of `uv run`, `test`): "makes", "good" and "sanity test" are ordinary words."""
     if _CHECK_EXITS.search(description):
         return True
+    if not _EXIT_WORDS.search(description):
+        return False
     for argv in commands:
-        words = [w for w in argv if w and not w.startswith("-")]
-        program = words[1] if len(words) > 1 and words[0].rsplit("/", 1)[-1] in _INTERPRETERS else words[0] if words else ""
-        name = program.rsplit("/", 1)[-1]
-        if name and name in description and _EXIT_WORDS.search(description):
-            return True
+        for word in argv:
+            name = word.rsplit("/", 1)[-1]
+            if _SCRIPT.fullmatch(name) and re.search(rf"(?<![\w.]){re.escape(name)}(?![\w])", description):
+                return True
     return False
 
 
