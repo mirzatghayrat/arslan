@@ -422,8 +422,9 @@ else if wd is not Monday then
 else
 \tset d to 3
 end if
-set due to now + (d * days)
+set fridayDate to now + (d * days)
 """
+# BLOCKS sets fridayDate because CHAIN_TELL reads it: since #985 a bare name in the tell must have been set.
 
 
 def test_the_t1_r3_weekday_chain_that_did_not_compile_is_known(compiles):
