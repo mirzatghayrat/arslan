@@ -1,20 +1,23 @@
-"""A goal's leftover processes, found and ended (L7-5i, #991 max review L1, the user's decision of 11-17).
+"""A goal's leftover processes, found and never signalled (L7-5i, #991 max review L1; detect-only, the user 11-18).
 
 A command can leave a process running after it returns (`cmd &`, `nohup`, a dev server): `terminal_exec` starts each
 command in a session of its own and ends it on a timeout or a stop, not on a normal return (`run_temp` keeps the run's
 temp folder for such a process). Before a goal's host check runs a line that declares outputs, such a process could put
 the outputs back right after the host removes them, and the host would accept the worker's bytes as its own run's. So
-the goal's check ends them first (`goal_checks.run`), and runs nothing while one is left.
+while one is there, the goal's check removes nothing and runs nothing: the goal stops for review, naming each one
+(`goal_checks.run`). Nothing is ever signalled: a wrong attribution costs one stop, never another program's process.
 
-Only a process positively the goal's is ever ended (#991 max review r2):
+What counts as the goal's (#991 max review r2):
 - the members of a recorded process group whose leader is alive and started when that run's own record says (an id
   is not reused while any process of its group is left, so a live leader with the recorded start is the same group);
 - any process whose environment carries one of the goal's runs' own TMPDIRs (`run_temp.folder`, one `mkdtemp` per
-  run, so no other process has it), which also finds one that left its group (`setsid`) and was reparented;
-- what descends from one of those (a live parent's children are its own).
+  run, so no other process has it), which also finds one that left its group (`setsid`) and was reparented.
+A child that left its group and dropped TMPDIR while its parent lives needs no rule of its own: the parent is the goal's
+and stops it (detect-only: one found process is enough).
 A process in a recorded group that can't be attributed (the leader is gone and its environment doesn't carry the
-run's TMPDIR or can't be read; or the record has no start time) is never ended: it is returned, and the goal stops for
-review, naming it. A group whose live leader started at another time is someone else's now: left alone.
+run's TMPDIR or can't be read; or the record has no start time) is returned apart: it stops the goal too, named as one
+that can't be told apart from another program's. A group whose live leader started at another time is someone else's
+now: left alone.
 
 Not found: a process that left its group, lost its parent, and whose environment can't be read (macOS hides it for its
 own platform binaries such as /bin/sh) or no longer carries the TMPDIR. That is the disclosed residual: a full fix runs
@@ -25,7 +28,6 @@ from __future__ import annotations
 import ctypes
 import ctypes.util
 import os
-import signal
 import struct
 import subprocess
 import sys
@@ -34,7 +36,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 _SAME_START_S = 2.0
-_END_WAIT_S = 3.0
 
 
 class Unreadable(RuntimeError):
@@ -162,29 +163,5 @@ def find(groups: dict[int, tuple[float | None, str | None]], tmpdirs: list[Path]
     for p in procs:
         if p.pid not in picked and p.pid not in mine and carries(p.pid):
             picked.add(p.pid)
-    grew = True
-    while grew:                                     # and what descends from them
-        grew = False
-        for p in procs:
-            if p.pid not in picked and p.ppid in picked:
-                picked.add(p.pid)
-                grew = True
     picked -= mine
     return [by_pid[pid] for pid in sorted(picked)], [by_pid[pid] for pid in sorted(unknown - picked - mine)]
-
-
-def end(groups: dict[int, tuple[float | None, str | None]], tmpdirs: list[Path]) -> tuple[list[Proc], list[Proc]]:
-    """End every process `find` attributes to the goal (SIGKILL, by pid), then look again. Returns (what of the goal's
-    is still there, what in its recorded groups couldn't be attributed and was left alone); the caller runs nothing
-    unless both are empty. Raises Unreadable when the process table can't be read."""
-    left, unknown = find(groups, tmpdirs)
-    deadline = time.monotonic() + _END_WAIT_S
-    while left and time.monotonic() < deadline:
-        for p in left:
-            try:
-                os.kill(p.pid, signal.SIGKILL)
-            except (ProcessLookupError, PermissionError):
-                pass
-        time.sleep(0.05)
-        left, unknown = find(groups, tmpdirs)
-    return left, unknown

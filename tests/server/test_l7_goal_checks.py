@@ -1288,46 +1288,59 @@ def _leave_running(monkeypatch, tmp_path, run_id, script, *args):
     return proc
 
 
+_STILL = "(a process the work left running is still there, so its check's outputs weren't touched: pid "
+
+
+def _no_signals(monkeypatch):
+    """Detect-only (the user, 11-18): nothing of the goal's check may signal a process."""
+    sent = []
+    from server.services import leftover_processes
+    monkeypatch.setattr(os, "kill", lambda pid, sig: sent.append((pid, sig)))
+    monkeypatch.setattr(os, "killpg", lambda pid, sig: sent.append((pid, sig)))
+    assert not hasattr(leftover_processes, "end")
+    return sent
+
+
 @pytest.mark.parametrize("escaped", [False, True, "parent-stays"], ids=["in-its-group", "left-its-group",
                                                                           "left-its-group-no-tmpdir"])
-async def test_a_leftover_process_that_puts_the_outputs_back_is_ended_first_and_none_of_its_files_count(
+async def test_a_leftover_process_that_puts_the_outputs_back_stops_the_goal_named_and_is_never_signalled(
         monkeypatch, tmp_path, escaped):
     import subprocess
     revealed = tmp_path / "tests" / "revealed"
-    ours = []
 
     async def leave_it_running():                   # after Start: a command of the work left it running
         if escaped == "parent-stays":       # found only as the recorded command's descendant
-            ours.append(_leave_running(monkeypatch, tmp_path, 4242, _ESCAPE_KEEP, _REPLANTER, str(revealed)))
+            _leave_running(monkeypatch, tmp_path, 4242, _ESCAPE_KEEP, _REPLANTER, str(revealed))
         elif escaped:    # its parent (the recorded group) exits; the re-planter is in a group of its own
             _leave_running(monkeypatch, tmp_path, 4242, _ESCAPE, _REPLANTER, str(revealed)).wait(timeout=10)
         else:
-            ours.append(_leave_running(monkeypatch, tmp_path, 4242, _REPLANTER, str(revealed)))
+            _leave_running(monkeypatch, tmp_path, 4242, _REPLANTER, str(revealed))
         for _ in range(100):
             if (revealed / "test_step_7.py").exists():
                 break
             await asyncio.sleep(0.05)
         assert (revealed / "test_step_7.py").exists()
     try:
+        sent = _no_signals(monkeypatch)
         host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=4242, worker_runs=0, after_start=leave_it_running)
-        assert host.changed == () and len(ran) == 9                     # the host replayed every stage itself
-        assert all("the host's" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))
-        assert all(proc.wait(timeout=5) is not None for proc in ours)    # ended (and reaped: no zombie left)
-        out = subprocess.run(["pgrep", "-f", str(revealed)], capture_output=True, text=True).stdout
-        assert out.strip() == "", subprocess.run(["ps", "-o", "pid=,ppid=,pgid=,stat=,command=", "-p", out.split()[0]], capture_output=True, text=True).stdout
+        assert ran == [] and host.accepted == () and sent == []
+        assert host.changed and all(entry.startswith(_STILL) for entry in host.changed), host.changed
+        assert any("python" in entry for entry in host.changed)                     # it is named
+        assert all("leftover" in (revealed / f"test_step_{n}.py").read_text() for n in range(2, 8))   # untouched
+        assert subprocess.run(["pgrep", "-f", str(revealed)], capture_output=True, text=True).stdout.strip()  # alive
     finally:
         subprocess.run(["pkill", "-f", str(revealed)], check=False)
 
 
-async def test_a_leftover_process_that_cant_be_ended_stops_the_goal_and_is_named(monkeypatch, tmp_path):
+async def test_a_leftover_process_still_there_stops_the_goal_and_is_named(monkeypatch, tmp_path):
     from server.services import leftover_processes, run_temp
     stuck = leftover_processes.Proc(pid=4321, ppid=1, pgid=4300, started=0.0, command="python3 replant.py")
-    monkeypatch.setattr(leftover_processes, "end", lambda groups, tmpdirs: ([stuck], []))
+    monkeypatch.setattr(leftover_processes, "find", lambda groups, tmpdirs: ([stuck], []))
     monkeypatch.setattr(run_temp, "recorded", lambda keys: ({4300: (1.0, "nohup python3 replant.py &")}, []))
     host, ran, revealed = await _staged(monkeypatch, tmp_path, run_id=77)
     assert ran == [] and host.accepted == ()
-    assert host.changed == ("(a process the work left running couldn't be ended: pid 4321, `python3 replant.py`, "
-                            "started by `nohup python3 replant.py &`)",)
+    assert host.changed == (_STILL + "4321, `python3 replant.py`, started by `nohup python3 replant.py &`; end it, then "
+                            "resume)",)
     assert all("the worker's run" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))  # untouched
 
 
@@ -1398,7 +1411,7 @@ def test_outputs_are_kept_outside_the_working_folder_even_when_arslans_data_is_i
     assert goal_checks._keep_folder("job/../1", tmp_path / "work").parent == tmp_path.resolve() / "data" / "goal-outputs" / "job____1"
 
 
-def test_a_recorded_group_id_the_system_gave_to_someone_elses_new_group_is_never_ended(monkeypatch):
+def test_a_recorded_group_id_the_system_gave_to_someone_elses_new_group_is_not_the_goals(monkeypatch):
     from server.services import leftover_processes as lp
     table = [lp.Proc(pid=os.getpid(), ppid=1, pgid=os.getpid(), started=1.0, command="this server"),
              lp.Proc(pid=700, ppid=1, pgid=700, started=5000.0, command="someone else's app"),
@@ -1410,7 +1423,7 @@ def test_a_recorded_group_id_the_system_gave_to_someone_elses_new_group_is_never
     assert [p.pid for p in ours] == [800] and unknown == []
 
 
-def test_a_leaderless_group_member_that_cant_be_attributed_is_never_signalled_and_named(monkeypatch):
+def test_a_leaderless_group_member_that_cant_be_attributed_is_returned_apart(monkeypatch):
     # #991 max review r2 MF2 (b): the recorded leader is gone, its id may have been reused by a group whose leader left
     from server.services import leftover_processes as lp
     table = [lp.Proc(pid=os.getpid(), ppid=1, pgid=os.getpid(), started=1.0, command="this server"),
@@ -1419,15 +1432,21 @@ def test_a_leaderless_group_member_that_cant_be_attributed_is_never_signalled_an
              lp.Proc(pid=88801, ppid=1, pgid=888, started=1000.0, command="the run's, with its TMPDIR")]
     monkeypatch.setattr(lp, "_table", lambda: table)
     monkeypatch.setattr(lp, "_tmpdir", lambda pid: "/runs/run-1-abc" if pid == 88801 else None)
-    signalled = []
-    monkeypatch.setattr(lp.os, "kill", lambda pid, sig: signalled.append(pid))
-    monkeypatch.setattr(lp, "_END_WAIT_S", 0.1)
-    left, unknown = lp.end({777: (1000.0, "x"), 888: (1000.0, "y")}, [Path("/runs/run-1-abc")])
-    assert 77750 not in signalled and 77751 not in signalled and 88801 in signalled
-    assert [p.pid for p in unknown] == [77750, 77751]
+    ours, unknown = lp.find({777: (1000.0, "x"), 888: (1000.0, "y")}, [Path("/runs/run-1-abc")])
+    assert [p.pid for p in ours] == [88801] and [p.pid for p in unknown] == [77750, 77751]
 
 
-def test_a_reused_group_id_with_another_start_time_is_never_signalled(monkeypatch):
+async def test_a_member_that_cant_be_attributed_stops_the_goal_named_as_such(monkeypatch, tmp_path):
+    from server.services import leftover_processes, run_temp
+    other = leftover_processes.Proc(pid=77750, ppid=1, pgid=777, started=9000.0, command="some daemon")
+    monkeypatch.setattr(leftover_processes, "find", lambda groups, tmpdirs: ([], [other]))
+    monkeypatch.setattr(run_temp, "recorded", lambda keys: ({777: (1000.0, "make serve &")}, []))
+    host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=78)
+    assert ran == [] and host.changed == ("(a process in a group this goal's command `make serve &` had can't be told "
+                                          "apart from another program's: pid 77750, `some daemon`)",)
+
+
+def test_a_reused_group_id_with_another_start_time_is_not_the_goals(monkeypatch):
     # #991 max review r2 MF2 (a): job B's command reused job A's group id; A's record keeps A's start time
     from server.services import leftover_processes as lp
     table = [lp.Proc(pid=os.getpid(), ppid=1, pgid=os.getpid(), started=1.0, command="this server"),
@@ -1435,9 +1454,7 @@ def test_a_reused_group_id_with_another_start_time_is_never_signalled(monkeypatc
              lp.Proc(pid=66602, ppid=66601, pgid=66601, started=8000.0, command="its child")]
     monkeypatch.setattr(lp, "_table", lambda: table)
     monkeypatch.setattr(lp, "_tmpdir", lambda pid: None)
-    signalled = []
-    monkeypatch.setattr(lp.os, "kill", lambda pid, sig: signalled.append(pid))
-    assert lp.end({66601: (1000.0, "job A's")}, []) == ([], []) and signalled == []
+    assert lp.find({66601: (1000.0, "job A's")}, []) == ([], [])
 
 
 def test_a_process_table_that_cant_be_read_fails_closed(monkeypatch):
@@ -1455,17 +1472,7 @@ def test_an_empty_argument_doesnt_hide_the_tmpdir():
     assert lp._env_tmpdir(raw) == "/runs/run-2-x"
 
 
-def test_a_process_that_survives_the_kill_is_returned(monkeypatch):
-    from server.services import leftover_processes as lp
-    stuck = lp.Proc(pid=900, ppid=1, pgid=900, started=1.0, command="stuck")
-    killed = []
-    monkeypatch.setattr(lp, "find", lambda groups, tmpdirs: ([stuck], []))
-    monkeypatch.setattr(lp, "_END_WAIT_S", 0.2)
-    monkeypatch.setattr(lp.os, "kill", lambda pid, sig: killed.append((pid, sig)))
-    assert lp.end({900: (1.0, "x")}, []) == ([stuck], []) and killed and killed[0] == (900, lp.signal.SIGKILL)
-
-
-async def test_after_a_resume_a_leftover_from_an_earlier_attempt_is_ended(execution_db, monkeypatch, tmp_path):
+async def test_after_a_resume_a_leftover_from_an_earlier_attempt_stops_the_goal(execution_db, monkeypatch, tmp_path):
     # #991 max review r2 MF1: attempt 1's command left the re-planter; Resume starts attempt 2 with its own run
     from arslan.companion.contracts import TaskSpec
     from server.services.task_repository import repository
@@ -1490,11 +1497,10 @@ async def test_after_a_resume_a_leftover_from_an_earlier_attempt_is_ended(execut
         assert (revealed / "test_step_7.py").exists()
     import subprocess
     try:
+        sent = _no_signals(monkeypatch)
         host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=4444, worker_runs=0, after_start=leave_it_running,
                                      task_id="job-resumed")                 # attempt 2's run
-        assert host.changed == () and len(ran) == 9
-        assert all("the host's" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))
-        assert subprocess.run(["pgrep", "-f", str(revealed)], capture_output=True, text=True).stdout.strip() == ""
+        assert ran == [] and sent == [] and host.changed and host.changed[0].startswith(_STILL), host.changed
     finally:
         subprocess.run(["pkill", "-f", str(revealed)], check=False)
 
@@ -1503,7 +1509,7 @@ async def test_without_a_bound_run_the_goal_stops_rather_than_skip_the_check(mon
     from server.services import execution_context
     token = execution_context._run_id.set(None)
     try:
-        host = await goal_checks._end_leftovers(types.SimpleNamespace(acceptance_runtime=types.SimpleNamespace(
+        host = await goal_checks._leftovers(types.SimpleNamespace(acceptance_runtime=types.SimpleNamespace(
             task_id=None, run_ids=set())))
     finally:
         execution_context._run_id.reset(token)

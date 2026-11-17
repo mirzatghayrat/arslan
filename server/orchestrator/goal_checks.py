@@ -194,11 +194,12 @@ def _clear(root, rels, keep) -> tuple[tuple[str, ...], str | None]:
             os.close(fd)
 
 
-async def _end_leftovers(state) -> tuple[str, ...]:
-    """L7-5i (#991 max review L1, the user 11-17): before a line with declared outputs runs, every process the goal's
-    commands left running, in any attempt of it (r2 MF1: a Resume is the same goal), is ended (`leftover_processes`):
-    one could put the outputs back after the host removed them. Returns why nothing may run (empty: nothing is left).
-    Fails closed: no run of the goal bound, or a process table it can't read, stops the goal for review."""
+async def _leftovers(state) -> tuple[str, ...]:
+    """L7-5i (#991 max review L1): before a line with declared outputs runs, a process the goal's commands left
+    running, in any attempt of it (r2 MF1: a Resume is the same goal), could put the outputs back after the host
+    removed them. Detect-only (the user, 11-18): while one is there the goal stops for review, naming it; nothing is
+    signalled. Returns why nothing may run (empty: nothing is left). Fails closed: no run of the goal bound, or a
+    process table it can't read, stops the goal for review."""
     from server.services import execution_context, leftover_processes, run_temp
     runtime = getattr(state, "acceptance_runtime", None)
     keys = {key for key in (execution_context.current_run_id(), *(getattr(runtime, "run_ids", None) or ()))
@@ -208,9 +209,9 @@ async def _end_leftovers(state) -> tuple[str, ...]:
         return ("(no run of this goal is known, so its leftover processes can't be checked)",)
     groups, folders = run_temp.recorded(keys)
     try:
-        left, unknown = await asyncio.to_thread(leftover_processes.end, groups, folders)
+        left, unknown = await asyncio.to_thread(leftover_processes.find, groups, folders)
     except leftover_processes.Unreadable:
-        return ("(the running processes couldn't be listed, so the goal's leftover ones can't be ended)",)
+        return ("(the running processes couldn't be listed, so the goal's leftover ones can't be checked)",)
     return (*_left_running(left, groups), *_unattributed(unknown, groups))
 
 
@@ -234,15 +235,16 @@ def _started_by(p, groups) -> str:
 
 
 def _left_running(procs, groups) -> tuple[str, ...]:
-    return tuple(f"(a process the work left running couldn't be ended: pid {p.pid}, `{p.command[:160]}`, started by "
-                 f"`{_started_by(p, groups)}`)" for p in procs)
+    return tuple(f"(a process the work left running is still there, so its check's outputs weren't touched: pid "
+                 f"{p.pid}, `{p.command[:160]}`, started by `{_started_by(p, groups)}`; end it, then resume)"
+                 for p in procs)
 
 
 def _unattributed(procs, groups) -> tuple[str, ...]:
     """#991 max review r2 MF2: a process in a group a command of this goal once had that can't be told apart from
-    another program's (its group id may have been reused): never ended, named."""
+    another program's (its group id may have been reused): named, never signalled."""
     return tuple(f"(a process in a group this goal's command `{_started_by(p, groups)}` had can't be told apart from "
-                 f"another program's, so it wasn't ended: pid {p.pid}, `{p.command[:160]}`)" for p in procs)
+                 f"another program's: pid {p.pid}, `{p.command[:160]}`)" for p in procs)
 
 
 async def run(request, state) -> HostChecks:
@@ -269,20 +271,19 @@ async def run(request, state) -> HostChecks:
         except ValueError as exc:
             return (f"({exc})",), ()
     runs, printed = [], []
-    ended = False
+    checked = False
     keep = None
-    # L7-5i: leftover processes are ended only before the first line with declared outputs. A goal whose lines declare
-    # none ("the service answers its health check") keeps the service the work started; in a goal with both kinds, a
-    # line after the first outputs line runs without it (the lines keep their order: a line before the outputs line
-    # would already stop at the outputs the work wrote).
+    # L7-5i: leftover processes are looked for only before the first line with declared outputs. A goal whose lines
+    # declare none ("the service answers its health check") keeps the service the work started and never stops for it;
+    # in a goal with both kinds, a service still running at the outputs line stops the goal for review, named.
     for check in lines:
         if not room(request):                       # L7-5g: a line that doesn't fit stays not run, never half run
             break
-        if check.outputs and not ended:
-            left = await _end_leftovers(state)
+        if check.outputs and not checked:
+            left = await _leftovers(state)
             if left:
                 return HostChecks(runs=tuple(runs), changed=left, accepted=accepted)
-            ended = True
+            checked = True
         changed, _ = await changes()
         cleared = ()
         if changed and check.outputs:
