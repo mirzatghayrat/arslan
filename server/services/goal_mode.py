@@ -632,15 +632,27 @@ def record_protected(root, checks, marks=()) -> ProtectedSet:
     return ProtectedSet(files=tuple(files), patterns=tuple(sorted(patterns)))
 
 
-def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=()) -> tuple[tuple[str, ...],
-                                                                                         tuple[ProtectedFile, ...]]:
+def _is_config(name: str) -> bool:
+    from fnmatch import fnmatchcase
+    return name in _PARENTS or any(fnmatchcase(name.lower(), p.lower()) for p in (*_CONFIG, "*.config.*"))
+
+
+def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=(), exempt=()) -> tuple[
+        tuple[str, ...], tuple[ProtectedFile, ...]]:
     """L7-5: (what changed, the new declared outputs to accept). A change is an edit, addition or deletion of a
     protected file (or one accepted before), or a new file where one stops the goal. `outputs`: the declared output
     patterns of the host run just finished; only new files matching one are accepted, never one named like runner
-    config. Before a run it is empty, so a file the worker wrote there between runs is a change."""
+    config. Before a run it is empty, so a file the worker wrote there between runs is a change.
+    L7-5g `exempt`: before a host run, the declared output patterns of a check line the worker's own last command ran
+    exactly (`goal_checks._ran_last`): a new file matching one is not a change here (a protected or accepted file that
+    differs still is). The host's own run must then rewrite each such file (`goal_checks.run`), and the check after
+    that run is the full one: a new file is accepted only as a declared output, never as runner config."""
     from fnmatch import fnmatchcase
     from pathlib import Path
     root = Path(root).resolve()
+
+    def exempted(rel: str) -> bool:
+        return any(fnmatchcase(rel, p) for p in exempt)
     known = {item.path: item for item in (*protected.files, *accepted)}
     changed = {item.path for item in known.values()
                if item.sha256 is not None and _digest(root / item.path, item.section is not None) != item.sha256}
@@ -654,8 +666,9 @@ def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=())
             if _digest(root / rel, True) != _EMPTY:
                 changed.add(rel)
         elif _conventional(rel) or _matches(rel, protected.patterns):
-            config = name in _PARENTS or any(fnmatchcase(name.lower(), p.lower()) for p in (*_CONFIG, "*.config.*"))
-            if not config and any(fnmatchcase(rel, p) for p in outputs):
+            if exempted(rel):
+                continue
+            if not _is_config(name) and any(fnmatchcase(rel, p) for p in outputs):
                 new.append(rel)
             else:
                 changed.add(rel)

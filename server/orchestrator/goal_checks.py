@@ -45,6 +45,54 @@ def room(request) -> bool:
             and (cap is None or budget.tool_calls < cap) and budget.remaining_seconds() > _TIME_RESERVE_S)
 
 
+def _is_check(item: dict, argv, root) -> bool:
+    """L7-5g (b): this run_command ran exactly the check line in the working folder: its command is the line as the
+    host joins it, optionally after one plain `cd <working folder> && `, with no other argument but a timeout, and it
+    started (an exit code)."""
+    import os
+    args, result = item.get("args") or {}, item.get("result") or {}
+    command = args.get("command")
+    if not isinstance(command, str) or set(args) - {"command", "timeout_s"} or type(result.get("exit_code")) is not int:
+        return False
+    head, sep, rest = command.strip().partition(" && ")
+    if sep and head.startswith("cd "):
+        try:
+            words = shlex.split(head)
+        except ValueError:
+            return False
+        if len(words) != 2 or os.path.realpath(os.path.join(root, words[1])) != os.path.realpath(root):
+            return False
+        command = rest.strip()
+    return command == shlex.join(argv)
+
+
+def _ran_last(trace, argv, root) -> bool:
+    """L7-5g (b): the worker's last run_command is exactly this check line, and nothing but reads came after it (any
+    other command or write could have written its outputs)."""
+    from server.registry import tool_defs
+    reads = tool_defs.named(lambda traits: traits.effect == "read")
+    for item in reversed(trace or ()):
+        if not isinstance(item, dict):
+            return False
+        if item.get("tool") == "run_command":
+            return _is_check(item, argv, root)
+        if item.get("tool") not in reads:
+            return False
+    return False
+
+
+def _stamps(root, rels) -> dict:
+    import os
+    out = {}
+    for rel in rels:
+        try:
+            st = os.stat(os.path.join(root, rel), follow_symlinks=False)
+            out[rel] = (st.st_ino, st.st_mtime_ns, st.st_ctime_ns)
+        except OSError:
+            out[rel] = None
+    return out
+
+
 async def run(request, state) -> HostChecks:
     """Verify, run, verify again, for each `check:` line; on a change nothing more runs."""
     from server.orchestrator.tool_loop import _run_tool, _tool_turn
@@ -60,10 +108,10 @@ async def run(request, state) -> HostChecks:
         return HostChecks(changed=("(no protected set recorded at Start)" if root else "(no working folder)",),
                           accepted=accepted)
 
-    async def changes(outputs=()):
+    async def changes(outputs=(), exempt=()):
         try:
             return await asyncio.to_thread(goal_mode.protected_changes, goal.protected, root, outputs=outputs,
-                                           accepted=accepted)
+                                           accepted=accepted, exempt=exempt)
         except ValueError as exc:
             return (f"({exc})",), ()
     runs, printed = [], []
@@ -71,11 +119,22 @@ async def run(request, state) -> HostChecks:
         if not room(request):                       # L7-5g: a line that doesn't fit stays not run, never half run
             break
         changed, _ = await changes()
+        before = {}
+        if changed and check.outputs and _ran_last(getattr(state, "tool_trace", None), check.argv, root):
+            # L7-5g (b): the worker's own exact run of this line wrote its declared outputs; those alone may differ,
+            # and the host's run below must rewrite each one (the worker's files are never accepted as they are).
+            left, _ = await changes(exempt=check.outputs)
+            if not left:
+                before = await asyncio.to_thread(_stamps, root, set(changed))
+                changed = ()
         if not changed:
             args = {"command": shlex.join(check.argv)}
             result = await _run_tool("run_command", args, json.dumps({"tool": "run_command", "args": args}),
                                      replace(_tool_turn(request, state), tool_trace=[], convo=[], host_check=True))
             changed, new = await changes(check.outputs)
+            after = await asyncio.to_thread(_stamps, root, before)
+            changed = (*changed, *sorted(rel for rel, stamp in before.items()
+                                         if stamp is not None and after[rel] == stamp and rel not in changed))
         if changed:
             return HostChecks(runs=tuple(runs), changed=changed, accepted=accepted)
         accepted = (*accepted, *new)

@@ -959,3 +959,92 @@ async def test_start_records_the_protected_set_on_the_row_and_refuses_one_over_i
         assert GoalSpec.model_validate(row.privacy["goal_spec"]).protected == protected
     finally:
         start.background_jobs._reset_for_tests()
+
+
+# -- L7-5g (b): the worker's own exact run of the check wrote its declared outputs -----------------------------------
+
+_STAGE = ("tests/revealed/test_step_*.py",)
+
+
+async def _after_the_workers(monkeypatch, tmp_path, trace, *, host_writes=True, worker_also=None,
+                             command="python3 tests/run_checks.py"):
+    """goal_checks.run after the worker's `trace`, with the worker's stage file already on disk; the host's run
+    rewrites it (`host_writes`) or not."""
+    _layout(tmp_path)
+    (tmp_path / "tests" / "revealed").mkdir()
+    line = _line(command, outputs=_STAGE)
+    goal = GoalSpec(objective="Staged check", checks=(line,), protected=goal_mode.record_protected(tmp_path, (line,)))
+    stage = tmp_path / "tests" / "revealed" / "test_step_2.py"
+    stage.write_text("def test_step_2(): assert True  # the worker's\n")
+    if worker_also is not None:
+        worker_also(tmp_path)
+    ran = []
+
+    async def folder():
+        return tmp_path
+
+    async def run_tool(tool, args, raw, turn):
+        ran.append(args["command"])
+        if host_writes:
+            stage.unlink()
+            stage.write_text("def test_step_2(): ...  # the runner's\n")
+        return _exit(1, "new tests were added")
+    monkeypatch.setattr(goal_checks, "_working_folder", folder)
+    monkeypatch.setattr(tool_loop, "_run_tool", run_tool)
+    monkeypatch.setattr(tool_loop, "_tool_turn", lambda request, state: ToolTurn.__new__(ToolTurn))
+    monkeypatch.setattr(goal_checks, "replace", lambda turn, **kw: turn)
+    request = types.SimpleNamespace(goal=goal, max_tool_calls=None)
+    state = types.SimpleNamespace(tool_trace=trace, acceptance_runtime=types.SimpleNamespace(
+        progress=types.SimpleNamespace(goal=None)))
+    return await goal_checks.run(request, state), ran, stage
+
+
+def _ran(command, code=1, **args):
+    return {"tool": "run_command", "args": {"command": command, **args}, "result": _exit(code, "F")}
+
+
+def _wrote(path):
+    return {"tool": "write_file", "args": {"path": path, "content": "x"}, "result": {"ok": True}}
+
+
+async def test_the_workers_exact_check_run_lets_the_host_run_it_and_accept_only_its_own_output(monkeypatch, tmp_path):
+    trace = [_wrote("app.py"), _ran(f"cd {shlex.quote(str(tmp_path) + '/')} && python3 tests/run_checks.py"),
+             {"tool": "read_file", "args": {"path": "tests/revealed/test_step_2.py"}, "result": {"ok": True}}]
+    host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, trace)
+    assert ran == ["python3 tests/run_checks.py"] and host.changed == ()
+    assert [(a.path, a.sha256) for a in host.accepted] == [
+        ("tests/revealed/test_step_2.py", goal_mode._digest(stage, False))]      # the hash after the host's run
+    assert "the runner's" in stage.read_text()
+
+
+@pytest.mark.parametrize("trace", [
+    [_wrote("tests/revealed/test_step_2.py")],                                       # an edit, no check run
+    [_ran("python3 tests/run_checks.py"), _ran("ls")],                              # another command after it
+    [_ran("python3 tests/run_checks.py"), _wrote("notes.md")],                      # a write after it
+    [_ran("python3 tests/run_checks.py; true")],                                     # not exactly the check
+    [_ran("cd /elsewhere && python3 tests/run_checks.py")],                          # in another folder
+    [_ran("cd $HOME && python3 tests/run_checks.py")],                               # not a plain cd
+    [_ran("python3 tests/run_checks.py", outside_sandbox=True)],                     # not as the host runs it
+    [{"tool": "run_command", "args": {"command": "python3 tests/run_checks.py"}, "result": {"ok": False}}],
+    [{"tool": "read_file", "args": {"path": "app.py"}, "result": {"ok": True}}],     # no command at all
+    [_ran("cd tests && python3 tests/run_checks.py")],                               # a subfolder
+], ids=["edit", "command-after", "write-after", "not-exact", "other-folder", "shell-cd", "outside", "never-started",
+        "no-run", "subfolder"])
+async def test_without_an_exact_last_check_run_the_workers_output_stays_a_protected_change(
+        trace, monkeypatch, tmp_path):
+    host, ran, _ = await _after_the_workers(monkeypatch, tmp_path, trace)
+    assert ran == [] and host.changed == ("tests/revealed/test_step_2.py",)
+
+
+async def test_an_edited_checker_still_stops_the_goal_after_an_exact_check_run(monkeypatch, tmp_path):
+    host, ran, _ = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py")],
+                                            worker_also=lambda root: (root / "tests" / "run_checks.py").write_text(
+                                                "print('ok')\n"))
+    assert ran == [] and host.changed == ("tests/revealed/test_step_2.py", "tests/run_checks.py")
+
+
+async def test_a_worker_output_the_hosts_run_doesnt_rewrite_is_never_accepted(monkeypatch, tmp_path):
+    host, ran, _ = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py", timeout_s=60)],
+                                            host_writes=False)
+    assert ran == ["python3 tests/run_checks.py"]
+    assert host.changed == ("tests/revealed/test_step_2.py",) and host.accepted == ()
