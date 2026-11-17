@@ -39,6 +39,15 @@ _WORKING_BEAT_S = 15
 _turn_locks: dict[str, asyncio.Lock] = {}
 
 
+def _stop_code(exc: BaseException) -> str:
+    """The review code for a budget stop or a timeout that left a turn (a resumed task's too: it runs in `_turn`): the code task_service recorded for a timeout
+    (L7-5h), else an execution failure; a budget stop is always the budget's."""
+    if isinstance(exc, TimeoutError):
+        logger.warning("turn stopped by a timeout")
+        return getattr(exc, "task_code", "task_execution_failed")
+    return "task_budget_exhausted"
+
+
 def _turn_lock(conversation_id: str) -> asyncio.Lock:
     lock = _turn_locks.get(conversation_id)
     if lock is None:
@@ -226,9 +235,11 @@ async def arslan_endpoint(ws: WebSocket, conversation_id: str) -> None:
                 await coro
             # The work limit, the no-progress breaker or a stream cut after part of the answer: not "done".
             outcome = "needs_review" if stopped else "ok"
-        except (TaskError, MemoryError, BudgetExceeded) as exc:
+        except (TaskError, MemoryError, BudgetExceeded, TimeoutError) as exc:
+            # L7-5h: a timeout that leaves the turn is the task's to review (task_service records its code), never an
+            # INTERNAL_ERROR that closes the socket.
             outcome = "needs_review"
-            code = exc.code if isinstance(exc, (TaskError, MemoryError)) else "task_budget_exhausted"
+            code = exc.code if isinstance(exc, (TaskError, MemoryError)) else _stop_code(exc)
             await _send_or_gone(protocol.error("TASK_REVIEW_REQUIRED", code, recoverable=True))
         except asyncio.CancelledError:
             outcome = "cancelled"

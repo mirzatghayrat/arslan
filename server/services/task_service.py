@@ -808,6 +808,7 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
     token = _current.set(runtime)
     _runtimes[runtime.task_id] = runtime
     recording = None                                  # the cancel record, when cancelled (below)
+    clock = None                                      # the task's own wall clock, once entered (L7-5h)
     with scope(budget), personal_context.bind(context), execution_checkpoint.bind(runtime.checkpoint):
         emit(_state_frame(value))
         try:
@@ -864,8 +865,16 @@ async def _run(value: dict, emit, body, *, progress=None, context=None):
             emit(_state_frame(final))
             raise
         except (Exception,) as exc:
-            code = ("task_budget_exhausted" if isinstance(exc, (BudgetExceeded, TimeoutError))
+            # L7-5h: a timeout is the budget's only when the task's own time is up (its wall clock fired, or the
+            # time it had is spent, as when the finish-time validation's limit is met); a single request that ran out
+            # of time with the budget all but unused is an execution failure. The socket sends the code recorded here.
+            code = ("task_budget_exhausted" if isinstance(exc, BudgetExceeded)
+                    or (isinstance(exc, TimeoutError) and (clock is not None and clock.expired()
+                                                           or budget.remaining_seconds() <= 0))
                     else exc.code if isinstance(exc, TaskError) else "task_execution_failed")
+            if isinstance(exc, TimeoutError):
+                exc.task_code = code
+                logger.warning("task %s stopped by a timeout: %s", runtime.task_id, code)
             async with repository() as repo:
                 row = await repo.get(runtime.task_id)
                 if row.phase != "cancelled":

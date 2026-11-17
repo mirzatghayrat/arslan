@@ -195,8 +195,14 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
         # the drafter only: the host never rewrites a drafted path (a bare name may be an app, a dotfile or a site).
         listed = ("\n\nFiles this conversation's earlier work saved (when the goal means one of them, use its exact "
                   "path):\n" + wrap_external("\n".join(earlier))) if earlier else ""
-        response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective) + listed,
-                                     tools=None)
+        # L7-5h: drafting is a reasoning model's answer with no tools, as the goal judge's verdict is: it has the
+        # judge's time, not a chat step's 75 s. Still out of time after the retry, it says so; no task is paused.
+        from server.services.task_validation import _GOAL_JUDGE_TIMEOUT_S
+        try:
+            response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective) + listed,
+                                         tools=None, timeout=_GOAL_JUDGE_TIMEOUT_S)
+        except TimeoutError:
+            return say("goal_draft_failed")
         drafted = () if getattr(response, "tool_calls", None) else drafted_checks(response.content, objective)
         # A judgement over a file the host itself listed (this conversation's earlier work saved it) is vouched for as
         # a path the user's objective names would be; any other drafted path is not (drafted_checks).
