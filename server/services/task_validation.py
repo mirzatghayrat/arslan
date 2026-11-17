@@ -22,8 +22,11 @@ logger = logging.getLogger(__name__)
 # L7-5e: a goal judgement check the judge gave no verdict on, by why: it said it can't judge (null), the request failed
 # or ran out of time, or the reply held no verdict. The check stays `not_run`; the goal round ends on these
 # (`turn_answer._goal_round`) as the user's to confirm, never as rounds of retried work.
+# L7-5i (L7-7 r3, T20): a target that is there but isn't one file the judge can read (a folder the work created after
+# Start, so it wasn't flagged then) is no verdict too: it failed every round, and the goal ran into the soft tool limit.
+# A target that isn't there yet stays `judged_file_unreadable`, failed: the work can still write it.
 NO_VERDICT = frozenset({"model_check_unjudgeable", "model_check_error", "model_check_timeout",
-                        "model_check_unparsed"})
+                        "model_check_unparsed", "judged_not_a_file"})
 _GOAL_JUDGE_TIMEOUT_S = 180.0    # L7-7 bench: DeepSeek's verdicts took 20-97 s
 _ARTIFACT = re.compile(r"^/api/v1/runs/([1-9][0-9]*)/artifacts/([^/]+)$")
 _LINK = re.compile(r"\]\(<?(/api/v1/runs/[1-9][0-9]*/artifacts/[^\n<>]+?)>?\)")
@@ -161,6 +164,13 @@ def _read_named(target: str, trace: list[dict], context: dict) -> str | None:
             continue
         return data.decode("utf-8", errors="replace")
     return None
+
+
+def _not_a_file(target: str, trace: list[dict], context: dict) -> bool:
+    """L7-5i: the judge's target is there but isn't a file it reads (a folder): no work makes it one, so it is no
+    verdict (`judged_not_a_file`), never a failure that sends the goal into another round."""
+    named, guesses = _target_candidates(target, trace, context)
+    return any(path.exists() and not path.is_file() for path in dict.fromkeys([*named, *guesses]))
 
 
 def _strict_json(reply: str):
@@ -430,7 +440,9 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                 # L7: the named file as the host reads it, at most 20,000 characters; never the answer.
                 content = _read_named(named[check.id], trace, context) if named.get(check.id) else None
                 if content is None:
-                    checks[index] = {**checks[index], "status": "failed", "code": "judged_file_unreadable"}
+                    there = _not_a_file(named[check.id], trace, context) if named.get(check.id) else False
+                    checks[index] = {**checks[index], "status": "not_run" if there else "failed",
+                                     "code": "judged_not_a_file" if there else "judged_file_unreadable"}
                     continue
                 subject = "\nContent of the named file:\n" + wrap_external(content[:20_000]) + _other_named(
                     named, named[check.id], 20_000 - len(content[:20_000]), trace, context)

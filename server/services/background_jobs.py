@@ -621,10 +621,36 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         return text or "", row.phase, row.pause_reason
 
 
+_COUNTED = ("model_requests", "tool_calls", "tokens")
+_CLOCK_LAG_S = 60.0      # a wall-clock stop's saved count may lag the clock by this much (its last checkpoint)
+
+
+def _reached(budget: dict) -> dict | None:
+    """L7-5i: the limit the budget's own counts reached: a counted one (hard before soft), else the soft wall time when
+    the time used is well short of the hard wall (closer than `_CLOCK_LAG_S` is the clock's own stop, the caller's
+    fallback). None when none was reached."""
+    used, hard, soft = budget.get("used") or {}, budget.get("limits") or {}, budget.get("soft_limits") or {}
+    for limits, is_soft in ((hard, False), (soft, True)):
+        for key in _COUNTED:
+            limit, count = limits.get(key), used.get(key)
+            if isinstance(limit, (int, float)) and isinstance(count, (int, float)) and count >= limit:
+                return {"reason": key, "used": count, "limit": limit, **({"soft": True} if is_soft else {})}
+    wall, soft_wall, hard_wall = used.get("wall_seconds"), soft.get("wall_seconds"), hard.get("wall_seconds")
+    if all(isinstance(v, (int, float)) for v in (wall, soft_wall, hard_wall)) and soft_wall <= wall < hard_wall - _CLOCK_LAG_S:
+        return {"reason": "wall_seconds", "used": round(wall), "limit": round(soft_wall), "soft": True}
+    return None
+
+
 def budget_stop_of(budget: dict, *, pause_reason: str | None, tier: str) -> dict | None:
     """What a job card says about the limit that stopped it, or None. K4a: a dollar stop shows dollars."""
     reason = budget.get("stop_reason")
     if not reason and pause_reason == "task_budget_exhausted":
+        # L7-5i (L7-7 r3, T20): a goal that wrapped up at a soft limit records no stop reason either; it said
+        # "wall_seconds 2700/2700" for a run of 335 s that stopped at 81 of 80 tool calls. Name the limit the snapshot
+        # reached, with its real count; a clock stop whose saved count lags is still the wall clock.
+        reached = _reached(budget)
+        if reached is not None:
+            return {**reached, "tier": tier}
         reason = "wall_seconds"   # asyncio.timeout ends the turn without recording a stop reason
     if not reason:
         return None
