@@ -217,8 +217,14 @@ async def test_one_check_of_arslans_keeps_the_goal_rounds(execution_db, active, 
     assert line.startswith("Goal started") and len(jobs) == 1 and jobs[0].goal_spec is not None
 
 
-async def test_a_second_goal_waits_for_the_first_to_be_cleared(execution_db, active, model, jobs):
+async def test_a_second_goal_waits_for_a_running_first_to_be_cleared(execution_db, active, model, jobs):
+    # L7-5h (the user, 11-17): only a running goal holds the conversation; one that isn't running is taken over
+    # (tests/server/test_l7_goal_takeover.py).
+    from server.services.task_repository import repository
     await _say(f"/goal {PROMPT}")
+    async with repository() as repo:
+        row = await repo.get((await _row(execution_db)).id)
+        await repo._advance(row, "state_changed", changes={"phase": "running", "pause_reason": None})
     assert "already has a goal" in await _say("/goal Another thing")
     assert await _say("/goal clear") == "Goal cleared."
     assert (await _row(execution_db)).phase == "cancelled"

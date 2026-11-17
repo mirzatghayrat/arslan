@@ -185,13 +185,16 @@ export function GoalChip() {
 export function GoalDraftingChip() {
   const { t } = useTranslation();
   const drafting = useArslanStore((s) => s.goalDrafting);
-  const [stopping, setStopping] = useState(false);
+  // #989 review MF1: the run whose stop was asked, not a flag: the chip stays mounted, and the next draft is a new
+  // run with a working Cancel.
+  const [stoppingRun, setStoppingRun] = useState<number | null>(null);
   if (!drafting) return null;
   const runId = drafting.runId;
+  const stopping = runId != null && stoppingRun === runId;
   const cancel = () => {                                        // a second click: the button is disabled by then
     if (runId == null) return;
-    setStopping(true);
-    api.cancelRun(runId).catch(() => setStopping(false));      // the outcome arrives as run_cancelled
+    setStoppingRun(runId);
+    api.cancelRun(runId).catch(() => setStoppingRun(null));    // the outcome arrives as run_cancelled
   };
   return <div data-testid="goal-drafting" role="status"
     className="inline-flex max-w-full items-center gap-1.5 self-start rounded-xl border border-primary/35 bg-primary/10 px-2 py-[3px] text-[10px] leading-snug">

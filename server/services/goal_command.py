@@ -67,15 +67,25 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None, 
         return await _pause(row, say)
     if rest.split(None, 1)[0].lower() == "edit":
         return await _edit(conversation_id, row, rest, say, source=source)
-    if row is not None and _open(row):
+    if row is not None and _open(row) and _running(row):
         return say("goal_exists")
+    # L7-5h (the user, 11-17; a change to Q0): a new goal takes over from one that isn't running (waiting for review,
+    # not started, paused, stuck, out of budget). The earlier goal keeps its record and card, left for the user to
+    # look at; only a goal that is running answers goal_exists.
+    replacing = row if row is not None and _open(row) else None
     if verb == "from" and tail and " " not in tail:
-        return await _from_job(conversation_id, tail, say)
-    return await _set(conversation_id, rest, say, drafting=drafting)
+        return await _from_job(conversation_id, tail, say, replacing=replacing)
+    return await _set(conversation_id, rest, say, drafting=drafting, replacing=replacing)
 
 
 def _open(row) -> bool:
     return row.phase not in {"succeeded", "cancelled", "failed"}
+
+
+def _running(row) -> bool:
+    """L7-5h: the goal is at work: its row runs, or a job of it is queued or running."""
+    from server.services import background_jobs
+    return row.phase in {"queued", "running", "verifying"} or background_jobs.goal_job(row.id) is not None
 
 
 async def _goal_row(conversation_id: str):
@@ -167,7 +177,7 @@ def earlier_files(conversation_id: str) -> tuple[str, ...]:
 
 
 async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, ...] | None = None,
-               drafting=None) -> str:
+               drafting=None, replacing=None) -> str:
     """`/goal [$N] <objective>`: drafts the checks with one request and no tools, then writes the not-started row.
     L7-6: `given` (a finished job's checks, `/goal from`) replaces the drafting."""
     from arslan.execution_budget import MAX_USD_CAP, run_budget
@@ -252,8 +262,11 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
             "allow_sensitive": ctx.allow_sensitive, "requires_local_model": ctx.model_is_local,
             "driver": task_service.checked_driver(dict(GOAL_DRIVER))})
         await repo.park_goal(task_id, spec.model_dump(mode="json"), owner_id=ctx.owner_id)
+        if replacing is not None:           # L7-5h: in the same transaction; one that started meanwhile refuses both
+            await repo.leave_goal(replacing, task_id)
     cost = f"{spec.tier}" + (f", ${spec.usd_cap:.2f}" if spec.usd_cap is not None else "")
-    return say("goal_set", objective=objective[:200], checks=_listed(spec, unverifiable(spec)), budget=cost)
+    line = say("goal_set", objective=objective[:200], checks=_listed(spec, unverifiable(spec)), budget=cost)
+    return line + ("\n\n" + say("goal_left") if replacing is not None else "")
 
 
 _RUN_ONCE = asyncio.Lock()          # L7-5d: one plain run per goal row, however quick the Starts
@@ -500,7 +513,7 @@ def from_job(job) -> tuple[GoalCheck, ...]:
     return tuple(out)
 
 
-async def _from_job(conversation_id: str, job_id: str, say) -> str:
+async def _from_job(conversation_id: str, job_id: str, say, *, replacing=None) -> str:
     """`/goal from <job id>`: the finished job card's "Keep going until met". A not-started goal with that job's
     objective and checks, waiting for Start like any other (Q0); never a goal job, a sub-session's or a running one."""
     from server.services import background_jobs
@@ -512,7 +525,7 @@ async def _from_job(conversation_id: str, job_id: str, say) -> str:
         given = from_job(job)
     except (ValueError, ValidationError):
         return say("goal_draft_failed")
-    return await _set(conversation_id, job.goal, say, given=given)
+    return await _set(conversation_id, job.goal, say, given=given, replacing=replacing)
 
 
 async def saved(task_id: str):
@@ -566,4 +579,16 @@ async def publish(conversation_id: str, emit) -> None:
     row = await _goal_row(conversation_id)
     if row is None or background_jobs.goal_job(row.id) or (row.phase, row.pause_reason) == ("cancelled", RAN_ONCE):
         return      # L7-5e: a goal handed to a plain job has no card of its own; the job sends its own
+    for left in await _left_for(conversation_id, row.id):
+        emit(await frame_of(left))      # L7-5h: the goal it took over from: its card now reads "look over the result"
     emit(await frame_of(row))
+
+
+async def _left_for(conversation_id: str, task_id: str) -> list:
+    """L7-5h: the goal rows that `task_id` took over from."""
+    from sqlalchemy import select
+    from server.db import session as db_session
+    from server.db.models import CompanionTask
+    async with db_session.AsyncSessionLocal() as db:
+        rows = (await db.scalars(select(CompanionTask).where(CompanionTask.conversation_id == conversation_id))).all()
+    return [row for row in rows if (row.privacy or {}).get("goal_left_for") == task_id]

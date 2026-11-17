@@ -41,4 +41,16 @@ describe("drafting a goal in the composer", () => {
     act(() => { useArslanStore.getState().handleFrame({ type: "run_cancelled", run_id: 9 }); });
     expect(screen.queryByTestId("goal-drafting")).toBeNull();
   });
+
+  it("offers a working Cancel again on the next draft after one was cancelled (#989 review MF1)", () => {
+    render(<OrchestratorChat {...base} />);
+    act(() => { useArslanStore.getState().handleFrame({ type: "goal_drafting", run_id: 1 }); });
+    fireEvent.click(screen.getByRole("button", { name: "jobs.goal.cancelDraft" }));
+    act(() => { useArslanStore.getState().handleFrame({ type: "run_cancelled", run_id: 1 }); });
+    act(() => { useArslanStore.getState().handleFrame({ type: "goal_drafting", run_id: 2 }); });
+    const cancel = screen.getByRole("button", { name: "jobs.goal.cancelDraft" });
+    expect((cancel as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(cancel);
+    expect(cancelRun.mock.calls).toEqual([[1], [2]]);
+  });
 });
