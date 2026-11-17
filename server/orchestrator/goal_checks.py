@@ -81,16 +81,65 @@ def _ran_last(trace, argv, root) -> bool:
     return False
 
 
-def _stamps(root, rels) -> dict:
+def _parent_fd(root, rel: str) -> tuple[int, str]:
+    """An fd on `rel`'s folder, opened one component at a time from the working folder with O_NOFOLLOW (a symlinked
+    folder on the way raises), and the file's own name."""
     import os
-    out = {}
-    for rel in rels:
+    *folders, name = rel.split("/")
+    if not name or any(part in ("", ".", "..") for part in folders) or name in (".", ".."):
+        raise OSError(f"not a plain path: {rel}")
+    fd = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        for part in folders:
+            nxt = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+    except BaseException:
+        os.close(fd)
+        raise
+    return fd, name
+
+
+def _regular(root, rel: str) -> bool:
+    import os
+    import stat
+    try:
+        fd, name = _parent_fd(root, rel)
+    except OSError:
+        return False
+    try:
+        return stat.S_ISREG(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode)
+    except OSError:
+        return False
+    finally:
+        os.close(fd)
+
+
+def _clear(root, rels) -> tuple[str, ...]:
+    """L7-5g (b): the host removes each of the worker's exempt outputs before its own run, so none of the worker's
+    bytes can be accepted (an append, a chmod or a touch by the check would otherwise keep them). Only regular files
+    are removed; any other path (a symlink, a folder, a fifo) is returned, and it stops the goal as a change."""
+    import os
+    import stat
+    refused = []
+    for rel in sorted(rels):
         try:
-            st = os.stat(os.path.join(root, rel), follow_symlinks=False)
-            out[rel] = (st.st_ino, st.st_mtime_ns, st.st_ctime_ns)
+            fd, name = _parent_fd(root, rel)
         except OSError:
-            out[rel] = None
-    return out
+            refused.append(rel)
+            continue
+        try:
+            if not stat.S_ISREG(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
+                refused.append(rel)
+            else:
+                os.unlink(name, dir_fd=fd)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            refused.append(rel)
+        finally:
+            os.close(fd)
+    return tuple(refused)
 
 
 async def run(request, state) -> HostChecks:
@@ -119,22 +168,21 @@ async def run(request, state) -> HostChecks:
         if not room(request):                       # L7-5g: a line that doesn't fit stays not run, never half run
             break
         changed, _ = await changes()
-        before = {}
+        cleared = ()
         if changed and check.outputs and _ran_last(getattr(state, "tool_trace", None), check.argv, root):
-            # L7-5g (b): the worker's own exact run of this line wrote its declared outputs; those alone may differ,
-            # and the host's run below must rewrite each one (the worker's files are never accepted as they are).
+            # L7-5g (b): the worker's own exact run of this line wrote its declared outputs; those alone may differ.
+            # The host removes them, and its run below must create each one again (the worker's bytes are never
+            # accepted; a check that needs the old file fails honestly).
             left, _ = await changes(exempt=check.outputs)
             if not left:
-                before = await asyncio.to_thread(_stamps, root, set(changed))
-                changed = ()
+                cleared, changed = tuple(sorted(changed)), await asyncio.to_thread(_clear, root, changed)
         if not changed:
             args = {"command": shlex.join(check.argv)}
             result = await _run_tool("run_command", args, json.dumps({"tool": "run_command", "args": args}),
                                      replace(_tool_turn(request, state), tool_trace=[], convo=[], host_check=True))
             changed, new = await changes(check.outputs)
-            after = await asyncio.to_thread(_stamps, root, before)
-            changed = (*changed, *sorted(rel for rel, stamp in before.items()
-                                         if stamp is not None and after[rel] == stamp and rel not in changed))
+            missing = [rel for rel in cleared if rel not in changed and not await asyncio.to_thread(_regular, root, rel)]
+            changed = (*changed, *(f"{rel} (the check's run didn't write it again)" for rel in missing))
         if changed:
             return HostChecks(runs=tuple(runs), changed=changed, accepted=accepted)
         accepted = (*accepted, *new)

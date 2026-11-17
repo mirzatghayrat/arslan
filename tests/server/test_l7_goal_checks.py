@@ -966,10 +966,10 @@ async def test_start_records_the_protected_set_on_the_row_and_refuses_one_over_i
 _STAGE = ("tests/revealed/test_step_*.py",)
 
 
-async def _after_the_workers(monkeypatch, tmp_path, trace, *, host_writes=True, worker_also=None,
+async def _after_the_workers(monkeypatch, tmp_path, trace, *, host_writes="overwrite", worker_also=None,
                              command="python3 tests/run_checks.py"):
     """goal_checks.run after the worker's `trace`, with the worker's stage file already on disk; the host's run
-    rewrites it (`host_writes`) or not."""
+    does `host_writes` to it: overwrite, append, touch, chmod, or nothing."""
     _layout(tmp_path)
     (tmp_path / "tests" / "revealed").mkdir()
     line = _line(command, outputs=_STAGE)
@@ -984,10 +984,20 @@ async def _after_the_workers(monkeypatch, tmp_path, trace, *, host_writes=True, 
         return tmp_path
 
     async def run_tool(tool, args, raw, turn):
+        import os
         ran.append(args["command"])
-        if host_writes:
-            stage.unlink()
-            stage.write_text("def test_step_2(): ...  # the runner's\n")
+        try:
+            if host_writes == "overwrite":
+                stage.write_text("def test_step_2(): ...  # the runner's\n")
+            elif host_writes == "append":
+                with open(stage, "a") as out:
+                    out.write("# the runner's\n")
+            elif host_writes == "touch":
+                os.utime(stage)
+            elif host_writes == "chmod":
+                os.chmod(stage, 0o644)
+        except FileNotFoundError:
+            return _exit(2, "", "No such file")
         return _exit(1, "new tests were added")
     monkeypatch.setattr(goal_checks, "_working_folder", folder)
     monkeypatch.setattr(tool_loop, "_run_tool", run_tool)
@@ -1043,8 +1053,52 @@ async def test_an_edited_checker_still_stops_the_goal_after_an_exact_check_run(m
     assert ran == [] and host.changed == ("tests/revealed/test_step_2.py", "tests/run_checks.py")
 
 
-async def test_a_worker_output_the_hosts_run_doesnt_rewrite_is_never_accepted(monkeypatch, tmp_path):
-    host, ran, _ = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py", timeout_s=60)],
-                                            host_writes=False)
-    assert ran == ["python3 tests/run_checks.py"]
-    assert host.changed == ("tests/revealed/test_step_2.py",) and host.accepted == ()
+@pytest.mark.parametrize("host_writes", ["append", "overwrite"])
+async def test_none_of_the_workers_bytes_are_accepted_whatever_the_check_does_to_the_file(
+        host_writes, monkeypatch, tmp_path):
+    """MF1: the host removes the worker's output before its run, so an append keeps none of the worker's bytes."""
+    host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py")],
+                                                host_writes=host_writes)
+    assert ran == ["python3 tests/run_checks.py"] and host.changed == ()
+    assert "the worker's" not in stage.read_text() and "the runner's" in stage.read_text()
+    assert [(a.path, a.sha256) for a in host.accepted] == [(
+        "tests/revealed/test_step_2.py", goal_mode._digest(stage, False))]
+
+
+@pytest.mark.parametrize("host_writes", ["touch", "chmod", "nothing"])
+async def test_a_check_that_doesnt_create_the_output_again_stops_the_goal(host_writes, monkeypatch, tmp_path):
+    def read_only(root):
+        (root / "tests" / "revealed" / "test_step_2.py").chmod(0o444)     # planted read-only, the check only chmods
+    host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py", timeout_s=60)],
+                                                host_writes=host_writes, worker_also=read_only)
+    assert ran == ["python3 tests/run_checks.py"] and not stage.exists()
+    assert host.changed == ("tests/revealed/test_step_2.py (the check's run didn't write it again)",)
+    assert host.accepted == ()
+
+
+async def test_a_worker_output_that_isnt_a_regular_file_is_never_removed_and_stops_the_goal(monkeypatch, tmp_path):
+    keep = tmp_path / "keep.txt"
+
+    def link(root):
+        keep.write_text("the user's\n")
+        stage = root / "tests" / "revealed" / "test_step_2.py"
+        stage.unlink()
+        stage.symlink_to(keep)
+    host, ran, _ = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py")],
+                                            worker_also=link)
+    assert ran == [] and host.changed == ("tests/revealed/test_step_2.py",)
+    assert keep.read_text() == "the user's\n"
+
+
+def test_the_host_never_removes_through_a_symlinked_folder_or_counts_a_symlink_as_written(tmp_path):
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "test_step_2.py").write_text("the user's\n")
+    root = tmp_path / "work"
+    (root / "tests").mkdir(parents=True)
+    (root / "tests" / "revealed").symlink_to(outside)
+    assert goal_checks._clear(root, ["tests/revealed/test_step_2.py"]) == ("tests/revealed/test_step_2.py",)
+    assert (outside / "test_step_2.py").read_text() == "the user's\n"
+    assert not goal_checks._regular(root, "tests/revealed/test_step_2.py")
+    (root / "here.py").symlink_to(outside / "test_step_2.py")
+    assert not goal_checks._regular(root, "here.py") and goal_checks._regular(root, "tests/../outside") is False

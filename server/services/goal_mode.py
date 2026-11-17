@@ -645,7 +645,7 @@ def protected_changes(protected: ProtectedSet, root, *, outputs=(), accepted=(),
     config. Before a run it is empty, so a file the worker wrote there between runs is a change.
     L7-5g `exempt`: before a host run, the declared output patterns of a check line the worker's own last command ran
     exactly (`goal_checks._ran_last`): a new file matching one is not a change here (a protected or accepted file that
-    differs still is). The host's own run must then rewrite each such file (`goal_checks.run`), and the check after
+    differs still is). The host then removes each such file and its own run must write it again (`goal_checks.run`), and the check after
     that run is the full one: a new file is accepted only as a declared output, never as runner config."""
     from fnmatch import fnmatchcase
     from pathlib import Path
