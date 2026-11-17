@@ -83,10 +83,30 @@ def _regular(root, rel: str) -> bool:
         os.close(fd)
 
 
-def _clear(root, rels) -> tuple[str, ...]:
+def _keep_folder(task_id: str, root):
+    """L7-5i (the user, 11-17): where the outputs the host removes before its runs are kept, never deleted: a folder per
+    verdict under Arslan's own data folder, which no command of the work may write. When that folder is inside the
+    working folder (a working folder that holds Arslan's data), beside the runs' temp root instead, so the kept files
+    are never part of the folder the check verifies."""
+    import datetime
+    from pathlib import Path
+    from server import config
+    from server.services import run_temp
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(task_id))[:120] or "goal"
+    base = Path(config.data_dir()).resolve() / "goal-outputs"
+    if base.is_relative_to(Path(root).resolve()):
+        runs = run_temp.root()
+        base = runs.parent / runs.name.replace("arslan-runs-", "arslan-goal-outputs-")
+    return base / safe / stamp
+
+
+def _clear(root, rels, keep) -> tuple[str, ...]:
     """L7-5g (b): the host removes each of the worker's new outputs before its own runs, so none of the worker's
-    bytes can be accepted (an append, a chmod or a touch by the check would otherwise keep them). Only regular files
-    are removed; any other path (a symlink, a folder, a fifo) is returned, and it stops the goal as a change."""
+    bytes can be accepted (an append, a chmod or a touch by the check would otherwise keep them). L7-5i: removed by
+    moving it into `keep` (its bytes copied there through the fd it was opened by, then unlinked), never deleted. Only
+    regular files are moved; any other path (a symlink, a folder, a fifo), or one that can't be kept, is returned, and
+    it stops the goal as a change."""
     import os
     import stat
     refused = []
@@ -97,17 +117,49 @@ def _clear(root, rels) -> tuple[str, ...]:
             refused.append(rel)
             continue
         try:
-            if not stat.S_ISREG(os.stat(name, dir_fd=fd, follow_symlinks=False).st_mode):
-                refused.append(rel)
-            else:
-                os.unlink(name, dir_fd=fd)
+            src = os.open(name, os.O_RDONLY | os.O_NOFOLLOW, dir_fd=fd)
         except FileNotFoundError:
-            pass
+            os.close(fd)
+            continue
+        except OSError:
+            os.close(fd)
+            refused.append(rel)
+            continue
+        try:
+            if not stat.S_ISREG(os.fstat(src).st_mode):
+                refused.append(rel)
+                continue
+            target = keep / rel
+            target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            with os.fdopen(os.dup(src), "rb") as data, open(target, "xb") as out:
+                while chunk := data.read(1 << 20):
+                    out.write(chunk)
+            os.unlink(name, dir_fd=fd)
         except OSError:
             refused.append(rel)
         finally:
+            os.close(src)
             os.close(fd)
     return tuple(refused)
+
+
+def _end_leftovers(state) -> list:
+    """L7-5i (#991 max review L1, the user 11-17): before a line with declared outputs runs, every process the job's
+    commands left running is ended (`leftover_processes`): one could put the outputs back after the host removed them.
+    Returns what is still there."""
+    from server.services import execution_context, leftover_processes, run_temp
+    runtime = getattr(state, "acceptance_runtime", None)
+    keys = {key for key in (execution_context.current_run_id(), *(getattr(runtime, "run_ids", None) or ())) if key is not None}
+    if not keys:
+        return []
+    groups, folders = run_temp.recorded(keys)
+    return leftover_processes.end(groups, folders)
+
+
+def _left_running(procs) -> tuple[str, ...]:
+    from server.services import run_temp
+    return tuple(f"(a process the work left running couldn't be ended: pid {p.pid}, `{p.command[:160]}`, started by "
+                 f"`{(run_temp.command_of(p.pgid) or 'a command of this goal')[:160]}`)" for p in procs)
 
 
 async def run(request, state) -> HostChecks:
@@ -134,9 +186,20 @@ async def run(request, state) -> HostChecks:
         except ValueError as exc:
             return (f"({exc})",), ()
     runs, printed = [], []
+    ended = False
+    keep = None
+    # L7-5i: leftover processes are ended only before the first line with declared outputs. A goal whose lines declare
+    # none ("the service answers its health check") keeps the service the work started; in a goal with both kinds, a
+    # line after the first outputs line runs without it (the lines keep their order: a line before the outputs line
+    # would already stop at the outputs the work wrote).
     for check in lines:
         if not room(request):                       # L7-5g: a line that doesn't fit stays not run, never half run
             break
+        if check.outputs and not ended:
+            left = await asyncio.to_thread(_end_leftovers, state)
+            if left:
+                return HostChecks(runs=tuple(runs), changed=_left_running(left), accepted=accepted)
+            ended = True
         changed, _ = await changes()
         cleared = ()
         if changed and check.outputs:
@@ -147,20 +210,23 @@ async def run(request, state) -> HostChecks:
             # and an honest `; echo EXIT=$?` after the check failed 4 of 6 T19 runs in L7-7 r3).
             left, _ = await changes(exempt=check.outputs)
             if not left:
-                cleared, changed = tuple(sorted(changed)), await asyncio.to_thread(_clear, root, changed)
+                keep = keep or _keep_folder(getattr(runtime, "task_id", None) or "goal", root)
+                cleared, changed = tuple(sorted(changed)), await asyncio.to_thread(_clear, root, changed, keep)
+        moved = set(cleared) - set(changed)
+        kept = (f"(the outputs it removed before its runs are kept in {keep})",) if moved else ()
         if changed:
-            return HostChecks(runs=tuple(runs), changed=changed, accepted=accepted)
+            return HostChecks(runs=tuple(runs), changed=(*changed, *kept), accepted=accepted)
         args = {"command": shlex.join(check.argv)}
         settled, last = None, None
         for _ in range(STABLE_RUNS if check.outputs else 1):
             if last is not None and not room(request):
                 return HostChecks(runs=tuple(runs), accepted=accepted, changed=(
-                    f"{check.id} (its check didn't settle before the budget ran out)",))
+                    f"{check.id} (its check didn't settle before the budget ran out)", *kept))
             result = await _run_tool("run_command", args, json.dumps({"tool": "run_command", "args": args}),
                                      replace(_tool_turn(request, state), tool_trace=[], convo=[], host_check=True))
             changed, new = await changes(check.outputs)
             if changed:
-                return HostChecks(runs=tuple(runs), changed=changed, accepted=accepted)
+                return HostChecks(runs=tuple(runs), changed=(*changed, *kept), accepted=accepted)
             # L7-5i: settled once two runs in a row exit the same and leave the same declared outputs, byte for byte.
             state_now = (result.get("exit_code"), tuple((item.path, item.sha256) for item in new))
             if not check.outputs or state_now == last:
@@ -169,11 +235,11 @@ async def run(request, state) -> HostChecks:
             last = state_now
         if settled is None:
             return HostChecks(runs=tuple(runs), accepted=accepted, changed=(
-                f"{check.id} (its check didn't settle in {STABLE_RUNS} runs)",))
+                f"{check.id} (its check didn't settle in {STABLE_RUNS} runs)", *kept))
         missing = [rel for rel in cleared if not await asyncio.to_thread(_regular, root, rel)]
         if missing:
-            return HostChecks(runs=tuple(runs), accepted=accepted, changed=tuple(
-                f"{rel} (the check's run didn't write it again)" for rel in missing))
+            return HostChecks(runs=tuple(runs), accepted=accepted, changed=(*(
+                f"{rel} (the check's run didn't write it again)" for rel in missing), *kept))
         accepted = (*accepted, *settled)
         runs.append({"tool": "run_command", "args": {**args, "argv": list(check.argv)}, "result": result})
         printed.append(f"{check.id} ({args['command'][:200]}): " + wrap_tool_output(json.dumps(

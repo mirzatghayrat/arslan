@@ -480,7 +480,7 @@ async def _execute(command: str, *, prefix: list[str], cwd: Path, env: dict, tem
     # NET-a, Codex round 1 F1: its proxy token works only for this process's run (its session, and what descends from it)
     net_policy.bind(net_run, proc.pid)
     command_sandbox.release_pins(profile)
-    run_temp.started(temp_key, proc.pid)  # §1a: the run's folder stays while this group has a process left
+    run_temp.started(temp_key, proc.pid, command)  # §1a: the run's folder stays while this group has a process left
     # 0.1.62 F1: output is read while the command runs (it used to be read in one go at the
     # end), so a time limit keeps what was already printed instead of losing it with the read.
     out_buf, err_buf = _Capped(), _Capped()
