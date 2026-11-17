@@ -31,6 +31,9 @@ logger = logging.getLogger(__name__)
 
 _folders: dict[int, Path] = {}
 _one_off = itertools.count(-1, -1)          # keys for commands outside any run
+# L7-5i: each group a command of this server started: when, and the command (for a goal's host check that has to end a
+# leftover process first, `leftover_processes`, and name it when it can't).
+_started: dict[int, tuple[float, str]] = {}
 
 
 def root() -> Path:
@@ -68,8 +71,10 @@ def _record(path: Path) -> Path:
     return path.with_name(path.name + ".groups")
 
 
-def started(key: int, group: int) -> None:
-    """A command of run `key` started process group `group`."""
+def started(key: int, group: int, command: str | None = None) -> None:
+    """A command of run `key` started process group `group` (L7-5i: `command`, what it ran)."""
+    import time
+    _started[group] = (time.time(), (command or "")[:300])
     path = _folders.get(key)
     if path is not None:
         with open(_record(path), "a", encoding="utf-8") as out:
@@ -81,6 +86,26 @@ def _groups(path: Path) -> list[int]:
         return [int(word) for word in _record(path).read_text(encoding="utf-8").split() if word.isdigit()]
     except OSError:
         return []
+
+
+def recorded(keys) -> tuple[dict[int, float | None], list[Path]]:
+    """L7-5i: the process groups the commands of runs `keys` started, with when each started (None: before this server
+    started), and those runs' temp folders. A finished run's folder is still there while a group of it is (`finish`)."""
+    base = root()
+    folders: list[Path] = []
+    for key in keys:
+        path = _folders.get(key)
+        if path is not None:
+            folders.append(path)
+        elif base.is_dir():
+            folders += [p for p in base.glob(f"run-{key}-*") if p.is_dir() and not p.is_symlink()]
+    groups = {group: (_started[group][0] if group in _started else None) for path in folders for group in _groups(path)}
+    return groups, folders
+
+
+def command_of(group: int) -> str | None:
+    """L7-5i: what the command that started `group` ran, when this server started it."""
+    return _started[group][1] if group in _started else None
 
 
 def _alive(group: int) -> bool:
@@ -141,3 +166,4 @@ def sweep() -> int:
 
 def _reset_for_tests() -> None:
     _folders.clear()
+    _started.clear()

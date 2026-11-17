@@ -6,7 +6,9 @@ real command gate, and compare what each answered, which cards each showed and w
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import shlex
 import types
 
@@ -967,6 +969,15 @@ async def test_start_records_the_protected_set_on_the_row_and_refuses_one_over_i
 # -- L7-5g (b): the worker's own exact run of the check wrote its declared outputs -----------------------------------
 
 _STAGE = ("tests/revealed/test_step_*.py",)
+_KEPT = "(the outputs it removed before its runs are kept in "
+
+
+def _stopped(host):
+    """L7-5i: a goal that stops after the host removed outputs names where they were kept (its last entry)."""
+    from pathlib import Path
+    if host.changed and host.changed[-1].startswith(_KEPT):
+        return host.changed[:-1], Path(host.changed[-1][len(_KEPT):-1])
+    return host.changed, None
 
 
 async def _after_the_workers(monkeypatch, tmp_path, trace, *, host_writes="overwrite", worker_also=None,
@@ -1074,7 +1085,9 @@ async def test_none_of_the_workers_bytes_are_accepted_whatever_the_check_does_to
             "tests/revealed/test_step_2.py", goal_mode._digest(stage, False))]
     else:       # L7-5i: a check that appends every run never settles: review, nothing accepted
         assert ran == ["python3 tests/run_checks.py"] * goal_checks.STABLE_RUNS and host.accepted == ()
-        assert host.changed == ("check-1 (its check didn't settle in 10 runs)",)
+        changed, kept = _stopped(host)
+        assert changed == ("check-1 (its check didn't settle in 10 runs)",)
+        assert "the worker's" in (kept / "tests" / "revealed" / "test_step_2.py").read_text()   # moved, not deleted
 
 
 @pytest.mark.parametrize("host_writes", ["touch", "chmod", "nothing"])
@@ -1084,8 +1097,9 @@ async def test_a_check_that_doesnt_create_the_output_again_stops_the_goal(host_w
     host, ran, stage = await _after_the_workers(monkeypatch, tmp_path, [_ran("python3 tests/run_checks.py", timeout_s=60)],
                                                 host_writes=host_writes, worker_also=read_only)
     assert ran == ["python3 tests/run_checks.py"] * 2 and not stage.exists()
-    assert host.changed == ("tests/revealed/test_step_2.py (the check's run didn't write it again)",)
-    assert host.accepted == ()
+    changed, kept = _stopped(host)
+    assert changed == ("tests/revealed/test_step_2.py (the check's run didn't write it again)",)
+    assert host.accepted == () and "the worker's" in (kept / "tests" / "revealed" / "test_step_2.py").read_text()
 
 
 async def test_a_worker_output_that_isnt_a_regular_file_is_never_removed_and_stops_the_goal(monkeypatch, tmp_path):
@@ -1109,7 +1123,8 @@ def test_the_host_never_removes_through_a_symlinked_folder_or_counts_a_symlink_a
     root = tmp_path / "work"
     (root / "tests").mkdir(parents=True)
     (root / "tests" / "revealed").symlink_to(outside)
-    assert goal_checks._clear(root, ["tests/revealed/test_step_2.py"]) == ("tests/revealed/test_step_2.py",)
+    assert goal_checks._clear(root, ["tests/revealed/test_step_2.py"], tmp_path / "kept") == (
+        "tests/revealed/test_step_2.py",)
     assert (outside / "test_step_2.py").read_text() == "the user's\n"
     assert not goal_checks._regular(root, "tests/revealed/test_step_2.py")
     (root / "here.py").symlink_to(outside / "test_step_2.py")
@@ -1119,15 +1134,18 @@ def test_the_host_never_removes_through_a_symlinked_folder_or_counts_a_symlink_a
 # -- L7-5i (the user, 11-17): a line with declared outputs runs until it settles -----------------------------------
 
 async def _staged(monkeypatch, tmp_path, *, stages=7, worker_runs=7, settle=True, room_for=None, outputs=_STAGE,
-                  trailing=""):
+                  trailing="", on_run=None, run_id=None, extra_lines=(), after_start=None):
     """T19's shape: each run of the check reveals the next stage's test file until all `stages` are out, then exits
     0. The worker's own runs revealed `worker_runs` of them. `settle=False`: a check whose output differs every run.
     `room_for`: how many host runs fit (`room`)."""
     _layout(tmp_path)
     revealed = tmp_path / "tests" / "revealed"
-    revealed.mkdir()
+    revealed.mkdir(exist_ok=True)
     line = _line("python3 tests/run_checks.py", outputs=outputs)
-    goal = GoalSpec(objective="Staged check", checks=(line,), protected=goal_mode.record_protected(tmp_path, (line,)))
+    lines = (line, *extra_lines)
+    goal = GoalSpec(objective="Staged check", checks=lines, protected=goal_mode.record_protected(tmp_path, lines))
+    if after_start is not None:
+        await after_start()
     for n in range(1, worker_runs + 1):           # after Start: the worker's own runs revealed these
         (revealed / f"test_step_{n}.py").write_text(f"def test_{n}(): ...  # revealed by the worker's run\n")
     ran = []
@@ -1137,6 +1155,8 @@ async def _staged(monkeypatch, tmp_path, *, stages=7, worker_runs=7, settle=True
 
     async def run_tool(tool, args, raw, turn):
         ran.append(args["command"])
+        if on_run is not None and (answer := on_run(len(ran), args["command"])) is not None:
+            return answer
         out = sorted(revealed.glob("test_step_*.py"))
         if not settle:
             (revealed / "test_step_1.py").write_text(f"# run {len(ran)}\n")
@@ -1157,8 +1177,13 @@ async def _staged(monkeypatch, tmp_path, *, stages=7, worker_runs=7, settle=True
     monkeypatch.setattr(goal_checks, "replace", lambda turn, **kw: turn)
     trace = [_ran(f"python3 tests/run_checks.py{trailing}")] * worker_runs
     state = types.SimpleNamespace(tool_trace=trace, acceptance_runtime=types.SimpleNamespace(
-        progress=types.SimpleNamespace(goal=None)))
-    return await goal_checks.run(types.SimpleNamespace(goal=goal, max_tool_calls=None), state), ran, revealed
+        progress=types.SimpleNamespace(goal=None), task_id="job-t19", run_ids=set()))
+    request = types.SimpleNamespace(goal=goal, max_tool_calls=None)
+    if run_id is None:
+        return await goal_checks.run(request, state), ran, revealed
+    from server.services import execution_context
+    with execution_context.bind_run(run_id):
+        return await goal_checks.run(request, state), ran, revealed
 
 
 # The worker's last command in each L7-7 r3 T19 run (the run folder's `cd <run> && ` left out): r2 and r5 ran exactly
@@ -1181,15 +1206,215 @@ async def test_a_check_that_reveals_its_tests_in_stages_is_replayed_and_accepted
 async def test_a_check_that_never_settles_stops_for_review_after_its_bound(monkeypatch, tmp_path):
     host, ran, _ = await _staged(monkeypatch, tmp_path, settle=False)
     assert len(ran) == goal_checks.STABLE_RUNS and host.accepted == () and host.runs == ()
-    assert host.changed == ("check-1 (its check didn't settle in 10 runs)",)
+    assert _stopped(host)[0] == ("check-1 (its check didn't settle in 10 runs)",)
 
 
 async def test_a_check_that_hasnt_settled_when_the_budget_runs_out_stops_for_review(monkeypatch, tmp_path):
     host, ran, _ = await _staged(monkeypatch, tmp_path, room_for=4)       # the line's admission, then 3 more runs
     assert len(ran) == 4 and host.accepted == ()
-    assert host.changed == ("check-1 (its check didn't settle before the budget ran out)",)
+    assert _stopped(host)[0] == ("check-1 (its check didn't settle before the budget ran out)",)
 
 
 async def test_a_line_with_no_declared_outputs_still_runs_once(monkeypatch, tmp_path):
     host, ran, _ = await _staged(monkeypatch, tmp_path, worker_runs=0, stages=0, outputs=())
     assert ran == ["python3 tests/run_checks.py"] and host.changed == () and host.accepted == ()
+
+
+async def test_a_protected_file_written_in_one_replay_run_and_restored_in_the_next_stops_at_that_run(
+        monkeypatch, tmp_path):
+    # #991 max review r1 T1: every run is verified, not only the settled one ("verify once after settling" must fail)
+    checker = tmp_path / "tests" / "run_checks.py"
+
+    def on_run(n, command):
+        if n == 2:
+            checker.write_text("print('rewritten by run 2')\n")
+        elif n == 3:
+            checker.write_text("print('ok')\n")
+        return None
+    host, ran, _ = await _staged(monkeypatch, tmp_path, on_run=on_run)
+    assert len(ran) == 2 and host.accepted == ()
+    assert "tests/run_checks.py" in _stopped(host)[0]
+
+
+# -- L7-5i (#991 max review L1, the user 11-17): a process the work left running is ended before an output line ---
+
+_REPLANTER = """
+import os, sys, time
+folder = sys.argv[1]
+while True:
+    for n in range(2, 8):
+        path = os.path.join(folder, f"test_step_{n}.py")
+        if not os.path.exists(path):
+            with open(path, "w") as out:
+                out.write("def test(): ...  # put back by the worker's leftover process\\n")
+    time.sleep(0.005)
+"""
+
+
+# A command whose child leaves the command's group (setsid) and outlives it: only its TMPDIR says it is the run's.
+_ESCAPE = """
+import os, subprocess, sys
+child = subprocess.Popen([sys.executable, "-c", sys.argv[1], *sys.argv[2:]], start_new_session=True,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+print(child.pid, flush=True)
+"""
+
+
+# A command whose child leaves the group and drops TMPDIR, while the command itself stays: only its parent links it.
+_ESCAPE_KEEP = """
+import os, subprocess, sys, time
+env = {k: v for k, v in os.environ.items() if k != "TMPDIR"}
+subprocess.Popen([sys.executable, "-c", sys.argv[1], *sys.argv[2:]], start_new_session=True, env=env,
+                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+time.sleep(60)
+"""
+
+
+def _leave_running(monkeypatch, tmp_path, run_id, script, *args):
+    """A process a command of run `run_id` left running, as `terminal_exec` starts one: its own session, the run's
+    TMPDIR, its group recorded."""
+    import subprocess
+    import sys
+    from server.services import run_temp
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path.parent / f"{tmp_path.name}-data"))     # outside the work
+    run_temp._reset_for_tests()
+    temp = run_temp.folder(run_id)
+    proc = subprocess.Popen([sys.executable, "-c", script, *args], start_new_session=True,
+                            env={**os.environ, "TMPDIR": str(temp)}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    run_temp.started(run_id, proc.pid, "python3 replant.py &")
+    return proc
+
+
+@pytest.mark.parametrize("escaped", [False, True, "parent-stays"], ids=["in-its-group", "left-its-group",
+                                                                          "left-its-group-no-tmpdir"])
+async def test_a_leftover_process_that_puts_the_outputs_back_is_ended_first_and_none_of_its_files_count(
+        monkeypatch, tmp_path, escaped):
+    import subprocess
+    revealed = tmp_path / "tests" / "revealed"
+    ours = []
+
+    async def leave_it_running():                   # after Start: a command of the work left it running
+        if escaped == "parent-stays":       # found only as the recorded command's descendant
+            ours.append(_leave_running(monkeypatch, tmp_path, 4242, _ESCAPE_KEEP, _REPLANTER, str(revealed)))
+        elif escaped:    # its parent (the recorded group) exits; the re-planter is in a group of its own
+            _leave_running(monkeypatch, tmp_path, 4242, _ESCAPE, _REPLANTER, str(revealed)).wait(timeout=10)
+        else:
+            ours.append(_leave_running(monkeypatch, tmp_path, 4242, _REPLANTER, str(revealed)))
+        for _ in range(100):
+            if (revealed / "test_step_7.py").exists():
+                break
+            await asyncio.sleep(0.05)
+        assert (revealed / "test_step_7.py").exists()
+    try:
+        host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=4242, worker_runs=0, after_start=leave_it_running)
+        assert host.changed == () and len(ran) == 9                     # the host replayed every stage itself
+        assert all("the host's" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))
+        assert all(proc.wait(timeout=5) is not None for proc in ours)    # ended (and reaped: no zombie left)
+        out = subprocess.run(["pgrep", "-f", str(revealed)], capture_output=True, text=True).stdout
+        assert out.strip() == "", subprocess.run(["ps", "-o", "pid=,ppid=,pgid=,stat=,command=", "-p", out.split()[0]], capture_output=True, text=True).stdout
+    finally:
+        subprocess.run(["pkill", "-f", str(revealed)], check=False)
+
+
+async def test_a_leftover_process_that_cant_be_ended_stops_the_goal_and_is_named(monkeypatch, tmp_path):
+    from server.services import leftover_processes, run_temp
+    stuck = leftover_processes.Proc(pid=4321, ppid=1, pgid=4300, started=0.0, command="python3 replant.py")
+    monkeypatch.setattr(leftover_processes, "end", lambda groups, tmpdirs: [stuck])
+    monkeypatch.setattr(run_temp, "recorded", lambda keys: ({4300: 1.0}, []))
+    monkeypatch.setattr(run_temp, "command_of", lambda group: "nohup python3 replant.py &" if group == 4300 else None)
+    host, ran, revealed = await _staged(monkeypatch, tmp_path, run_id=77)
+    assert ran == [] and host.accepted == ()
+    assert host.changed == ("(a process the work left running couldn't be ended: pid 4321, `python3 replant.py`, "
+                            "started by `nohup python3 replant.py &`)",)
+    assert all("the worker's run" in (revealed / f"test_step_{n}.py").read_text() for n in range(1, 8))  # untouched
+
+
+async def test_with_no_leftover_process_the_verdict_is_as_before(monkeypatch, tmp_path):
+    from server.services import run_temp
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path.parent / f"{tmp_path.name}-data"))
+    run_temp._reset_for_tests()
+    run_temp.folder(5151)
+    host, ran, _ = await _staged(monkeypatch, tmp_path, run_id=5151)
+    assert host.changed == () and len(ran) == 9
+
+
+_SERVER = """
+import http.server, sys
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), http.server.SimpleHTTPRequestHandler).serve_forever()
+"""
+
+
+async def test_a_check_that_needs_a_service_the_work_started_keeps_it_and_passes(monkeypatch, tmp_path):
+    """The user, 11-17: only a line with declared outputs ends leftover processes. A goal like "start the service until
+    its health check passes" keeps its service."""
+    import socket
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        port = probe.getsockname()[1]
+    server = _leave_running(monkeypatch, tmp_path, 6161, _SERVER, str(port))
+    try:
+        for _ in range(100):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", port)) == 0:
+                    break
+            await asyncio.sleep(0.05)
+        _layout(tmp_path)
+        line = _line("python3 health.py", outputs=())
+        goal = GoalSpec(objective="Serve", checks=(line,), protected=goal_mode.record_protected(tmp_path, (line,)))
+        answered = []
+
+        async def folder():
+            return tmp_path
+
+        async def run_tool(tool, args, raw, turn):
+            with socket.socket() as probe:
+                up = probe.connect_ex(("127.0.0.1", port)) == 0
+            answered.append(up)
+            return _exit(0 if up else 1, "up" if up else "down")
+        monkeypatch.setattr(goal_checks, "_working_folder", folder)
+        monkeypatch.setattr(tool_loop, "_run_tool", run_tool)
+        monkeypatch.setattr(tool_loop, "_tool_turn", lambda request, state: ToolTurn.__new__(ToolTurn))
+        monkeypatch.setattr(goal_checks, "replace", lambda turn, **kw: turn)
+        from server.services import execution_context
+        state = types.SimpleNamespace(tool_trace=[], acceptance_runtime=types.SimpleNamespace(
+            progress=types.SimpleNamespace(goal=None), task_id="job-serve", run_ids=set()))
+        with execution_context.bind_run(6161):
+            host = await goal_checks.run(types.SimpleNamespace(goal=goal, max_tool_calls=None), state)
+        assert host.changed == () and host.runs[0]["result"]["exit_code"] == 0 and answered == [True]
+        assert server.poll() is None                                     # never ended
+    finally:
+        if server.poll() is None:
+            server.kill()
+
+
+def test_outputs_are_kept_outside_the_working_folder_even_when_arslans_data_is_inside_it(monkeypatch, tmp_path):
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path / "work" / ".arslan"))
+    (tmp_path / "work").mkdir()
+    keep = goal_checks._keep_folder("job-1", tmp_path / "work")
+    assert not keep.resolve().is_relative_to((tmp_path / "work").resolve()) and "arslan-goal-outputs-" in str(keep)
+    monkeypatch.setenv("ARSLAN_DATA_DIR", str(tmp_path / "data"))
+    assert goal_checks._keep_folder("job/../1", tmp_path / "work").parent == tmp_path.resolve() / "data" / "goal-outputs" / "job____1"
+
+
+def test_a_recorded_group_id_the_system_gave_to_someone_elses_new_group_is_never_ended(monkeypatch):
+    from server.services import leftover_processes as lp
+    table = [lp.Proc(pid=700, ppid=1, pgid=700, started=5000.0, command="someone else's app"),
+             lp.Proc(pid=701, ppid=700, pgid=700, started=5001.0, command="its child"),
+             lp.Proc(pid=800, ppid=1, pgid=800, started=1000.0, command="the run's leftover")]
+    monkeypatch.setattr(lp, "_table", lambda: table)
+    monkeypatch.setattr(lp, "_ours", lambda: set())
+    monkeypatch.setattr(lp, "_tmpdir", lambda pid: None)
+    found = lp.find({700: 1000.0, 800: 1000.5}, [])           # 700 was the run's at 1000, now another group's leader
+    assert [p.pid for p in found] == [800]
+    assert lp.find({700: None}, []) == []                       # not known when it started: can't tell, never ended
+
+
+def test_a_process_that_survives_the_kill_is_returned(monkeypatch):
+    from server.services import leftover_processes as lp
+    stuck = lp.Proc(pid=900, ppid=1, pgid=900, started=1.0, command="stuck")
+    killed = []
+    monkeypatch.setattr(lp, "find", lambda groups, tmpdirs: [stuck])
+    monkeypatch.setattr(lp, "_END_WAIT_S", 0.2)
+    monkeypatch.setattr(lp.os, "kill", lambda pid, sig: killed.append((pid, sig)))
+    assert lp.end({900: 1.0}, []) == [stuck] and killed and killed[0] == (900, lp.signal.SIGKILL)
+
