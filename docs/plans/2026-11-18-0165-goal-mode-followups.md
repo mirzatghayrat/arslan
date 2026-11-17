@@ -28,7 +28,6 @@ Goal mode ships in v0.1.64 **off by default**: Settings › Advanced, `goal_mode
 - **The keep fallback.** The fallback folder under the per-user temp folder is removed by macOS's periodic temp cleanup.
 - **Unlink by name after the clone or copy.** Compare `fstatat(name)` with `fstat(src)` before the unlink.
 - **The TMPDIR scan** reads every process's environment. Limit it to processes started after the goal's first recorded command.
-- **Hard links (pre-existing).** Check whether a sandboxed command can hard-link a protected file into the workspace; the commands profile doesn't deny `file-link`.
 - **Pseudo-paths on the card.** "(a process …)", "(kept in …)" and "(over the … bytes)" are pseudo-paths in `changed`, so the card shows them as protected files. Give them their own blocker field.
 - **The process table guard** runs before date parsing. Check the parsed rows instead; this is theoretical under `LC_ALL=C`.
 - **The copy fallback** reads to end of file, not to the size it checked. Cap the read.
@@ -50,6 +49,7 @@ Goal mode ships in v0.1.64 **off by default**: Settings › Advanced, `goal_mode
 - **A lenient judge.** On one bench run, a judgement about a TOTAL row passed although the row was wrong.
 
 ## Already in v0.1.64 (for the record)
+- **Hard links to protected files are refused.** Checked on 2026-11-18 under real seatbelt: `link()` needs write access to the source, so a sandboxed command can't hard-link a denied file into the work folder, or make a new name inside a denied folder. #996 pins this, and the test turns red if a future macOS changes it.
 - The replay cap is 12 runs. A check that reveals its tests in k stages needs k + 2 runs, so more than about 10 stages can't settle. This is a known limit in the release notes.
 - Leftover processes are detected and never ended. When one is found before a check line that declares outputs, the goal stops and names it.
 - More than 64 MB of one check's outputs stops the goal for review. This is a known limit in the release notes.
