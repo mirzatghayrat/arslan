@@ -134,16 +134,25 @@ def _ours(procs: list[Proc]) -> set[int]:
     return mine
 
 
-def find(groups: dict[int, tuple[float | None, str | None]], tmpdirs: list[Path]) -> tuple[list[Proc], list[Proc]]:
+def find(groups: dict[int, tuple[float | None, str | None]], tmpdirs: list[Path], *, root: Path | None = None,
+         keys=()) -> tuple[list[Proc], list[Proc]]:
     """(the goal's live processes, the live processes in its recorded groups that can't be attributed). `groups`: each
-    recorded group id, with when it started and its command (`run_temp.recorded`)."""
+    recorded group id, with when it started and its command (`run_temp.recorded`). `root` and `keys` (#991 fix-check
+    Later 1): a TMPDIR named `run-<key>-*` right under the runs' root is the goal's too, also once that run's folder is
+    gone (a setsid'd process of a finished earlier attempt keeps the string)."""
     procs = _table()
     mine, by_pid = _ours(procs), {p.pid: p for p in procs}
     folders = {os.path.realpath(str(path)) for path in tmpdirs}
+    base = os.path.realpath(str(root)) if root is not None else None
+    prefixes = tuple(f"run-{key}-" for key in keys)
 
     def carries(pid: int) -> bool:
         tmp = _tmpdir(pid)
-        return tmp is not None and os.path.realpath(tmp.rstrip("/")) in folders
+        if tmp is None:
+            return False
+        path = os.path.realpath(tmp.rstrip("/"))
+        return path in folders or (base is not None and os.path.dirname(path) == base
+                                   and os.path.basename(path).startswith(prefixes) and bool(prefixes))
     picked: set[int] = set()
     unknown: set[int] = set()
     for group, (recorded, _command) in groups.items():

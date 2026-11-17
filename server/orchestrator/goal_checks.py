@@ -204,29 +204,31 @@ async def _leftovers(state) -> tuple[str, ...]:
     runtime = getattr(state, "acceptance_runtime", None)
     keys = {key for key in (execution_context.current_run_id(), *(getattr(runtime, "run_ids", None) or ()))
             if key is not None}
-    keys |= await _attempt_runs(getattr(runtime, "task_id", None))
+    try:
+        keys |= await _attempt_runs(getattr(runtime, "task_id", None))
+    except Exception:  # noqa: BLE001 — #991 fix-check Later 2: fail closed, as an unreadable process table does
+        return ("(this goal's earlier attempts couldn't be read, so their leftover processes can't be checked)",)
     if not keys:
         return ("(no run of this goal is known, so its leftover processes can't be checked)",)
     groups, folders = run_temp.recorded(keys)
     try:
-        left, unknown = await asyncio.to_thread(leftover_processes.find, groups, folders)
+        left, unknown = await asyncio.to_thread(leftover_processes.find, groups, folders, root=run_temp.root(),
+                                                keys=tuple(sorted(keys)))
     except leftover_processes.Unreadable:
         return ("(the running processes couldn't be listed, so the goal's leftover ones can't be checked)",)
     return (*_left_running(left, groups), *_unattributed(unknown, groups))
 
 
 async def _attempt_runs(task_id) -> set[int]:
-    """Every run of every attempt of the goal's task (`task_attempts.run_ids`)."""
+    """Every run of every attempt of the goal's task (`task_attempts.run_ids`). Raises when they can't be read: the
+    caller fails closed."""
     if not task_id:
         return set()
     from sqlalchemy import select
     from server.db.task_models import TaskAttempt
     from server.services.task_repository import repository
-    try:
-        async with repository() as repo:
-            rows = (await repo.db.execute(select(TaskAttempt.run_ids).where(TaskAttempt.task_id == task_id))).all()
-    except Exception:  # noqa: BLE001 — no database (a test's stub state): the bound run is what there is
-        return set()
+    async with repository() as repo:
+        rows = (await repo.db.execute(select(TaskAttempt.run_ids).where(TaskAttempt.task_id == task_id))).all()
     return {run for (runs,) in rows for run in (runs or ()) if isinstance(run, int)}
 
 
