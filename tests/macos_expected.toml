@@ -370,9 +370,11 @@ xfail = 0
 
 # 0.1.63 D4 follow-up: osacompile (macOS-only) tells a real AppleScript syntax error from a
 # script that only prints one, without running it. Appended boundary case.
+# 0.1.64 (#979): a second, test_osacompile_confirms_the_t1_r3_chain_does_not_compile_and_the_blocks_do,
+# the real osacompile run behind the if/else-if grammar (the T1 r3 chain fails, the block form compiles).
 ["server/test_d4_osascript_not_authorized.py"]
-markers = 1
-cases = 1
+markers = 2
+cases = 2
 xfail = 0
 
 ["server/test_extract_api.py"]

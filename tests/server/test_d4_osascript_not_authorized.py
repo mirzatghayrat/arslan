@@ -449,6 +449,109 @@ def test_a_nested_tell_to_an_app_object_is_still_known(compiles):
     assert mac_applescript(script, REMINDERS_REFUSED)
 
 
+# -- if / else if / else / end if blocks before the tell (L7-7 bench, T1 r3 on goal mode; T1 fails in plain mode too) ---
+# The model computed due dates with a weekday chain. Its first form, one-line `if … then set …` followed by
+# `else if` lines, does not compile (-2741 at the first `else if`), so nothing ran; it stayed "outcome unknown" because
+# the grammar took only a one-line `if` with `=`-style comparisons. Bench data only, the list name made benign.
+WEEKDAY_CHAIN = """set now to (current date)
+set wd to weekday of now
+set tomorrow to now + (1 * days)
+set time of tomorrow to (9 * hours)
+
+if wd is Sunday then set d to 5
+else if wd is Monday then set d to 4
+else if wd is Tuesday then set d to 3
+else if wd is Saturday then set d to 6
+end if
+set fridayDate to now + (d * days)
+"""
+CHAIN_TELL = """tell application "Reminders"
+\tset theList to make new list with properties {name:"Bench list"}
+\ttell theList
+\t\tmake new reminder with properties {name:"Call the bank", due date:fridayDate}
+\tend tell
+end tell"""
+CHAIN_SYNTAX = "154:161: syntax error: Expected end of line, etc. but found “else if”. (-2741)\n"
+BLOCKS = """set now to (current date)
+set wd to weekday of now
+set mo to month of now
+set d to 4
+if wd is Sunday then
+\tset d to 5
+else if wd is not Monday then
+\tif mo is December then
+\t\tset d to 2
+\tend if
+else
+\tset d to 3
+end if
+set due to now + (d * days)
+"""
+
+
+def test_the_t1_r3_weekday_chain_that_did_not_compile_is_known(compiles):
+    assert mac_applescript(WEEKDAY_CHAIN + CHAIN_TELL, CHAIN_SYNTAX)
+    assert compiles["checked"] == [WEEKDAY_CHAIN + CHAIN_TELL]
+    assert known(heredoc(WEEKDAY_CHAIN + CHAIN_TELL), refused(CHAIN_SYNTAX))
+
+
+def test_if_blocks_of_safe_sets_before_the_tell_are_allowed(compiles):
+    assert known(heredoc(BLOCKS + CHAIN_TELL), refused(PRIVILEGE))
+    assert mac_applescript(BLOCKS + CHAIN_TELL, PRIVILEGE)
+    compiles["compiles"] = True              # a script that compiles: its syntax error is forged
+    assert not mac_applescript(WEEKDAY_CHAIN + CHAIN_TELL, CHAIN_SYNTAX)
+
+
+NESTED = "set n to 1\n" + "if n = 1 then\n" * 3 + "set n to 2\n" + "end if\n" * 3
+
+
+@pytest.mark.parametrize("prelude", [
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\ttell application "Finder" to make new folder\nend if',
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\tset x to beep\nend if',            # a command
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\tdo shell script "touch x"\nend if',
+    'set n to 1\nif (run script "1") = n then\n\tset n to 2\nend if',                               # condition runs
+    'set n to 1\nif foo(n) is 1 then\n\tset n to 2\nend if',                                        # a handler
+    'set n to 1\nif n is 1 then\n\tset n to 2',                                                     # never closed
+    'set n to 1\nelse if n is 1 then set n to 2\nend if',                                            # no if before
+    'set n to 1\nend if',                                                                            # nothing open
+    'set n to 1\nend if\nif n is 1 then\n\tset n to 2',                                              # closed first
+    'set now to current date\nset wd to weekday of now\nif wd is Sunday then\n\ttell application "Reminders" to make new list\nend if',
+    'set n to 1\nif n is 1 set n to 2',                                                               # no then
+    'set n to 1\nif n is 1 or set n to 2',                                                            # not then
+    'set n to 1\nif n contains 1 then\n\tset n to 2\nend if',                                         # not a comparison
+    'set n to 1\nif n is 1 then set n to 2\nset m to 3\nelse\nend if',                              # chain broken
+    'if x is Sunday then\n\tset n to 2\nend if',                                                     # x not set
+    'set n to 1\nif n is 1 then display dialog "x"',
+    'set n to 1\nif n is 1 then\n\tdisplay dialog "x"\nend if',
+    'set n to 1\nif n is 1 then set n to 2 else set n to 3',                                        # one line, else
+    'set n to 1\nif n is 1 then\nelse if n then\nend if',                                            # not a comparison
+    'set n to 1\nif n is 1 then\n\tset n to 2\nelse\n\tif n is 2 then\n\t\tset n to 3\nend if',      # inner unclosed
+    'set n to 1\nrepeat 2 times\nset n to 2\nend repeat',
+    NESTED.replace("if n = 1 then\n", "if n = 1 then\nif n = 1 then\n", 1).replace(
+        "end if\n", "end if\nend if\n", 1),                                                          # 4 deep
+])
+def test_if_blocks_that_can_act_or_do_not_close_stay_unknown(prelude, compiles):
+    assert not known(heredoc(prelude + "\n" + TELL), refused(PRIVILEGE))
+    assert not mac_applescript(prelude + "\n" + TELL, CHAIN_SYNTAX)
+    assert compiles["checked"] == []
+
+
+def test_an_if_left_open_after_the_tell_stays_unknown(compiles):
+    assert not known(heredoc(TELL + "\nset n to 1\nif n is 1 then\n\tset n to 2"), refused(PRIVILEGE))
+    assert known(heredoc(TELL + "\nset n to 1\nif n is 1 then\n\tset n to 2\nend if"), refused(PRIVILEGE))
+
+
+def test_three_deep_is_the_bound(compiles):
+    assert known(heredoc(NESTED + TELL), refused(PRIVILEGE))
+
+
+@pytest.mark.macos
+@pytest.mark.skipif(sys.platform != "darwin", reason="osacompile is macOS-only")
+def test_osacompile_confirms_the_t1_r3_chain_does_not_compile_and_the_blocks_do():
+    assert task_service._fails_to_compile(WEEKDAY_CHAIN + CHAIN_TELL)
+    assert not task_service._fails_to_compile(BLOCKS + CHAIN_TELL)
+
+
 # -- the tell-depth counter follows AppleScript's own block structure (#979 max review, pre-existing holes) -------------
 # Each shape below shifted the depth so that a later top-level line was never checked. Benign payloads only.
 ACTS = 'display dialog "x"'
