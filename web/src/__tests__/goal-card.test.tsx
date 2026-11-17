@@ -62,7 +62,7 @@ describe("edit step", () => {
     expect(start).not.toBeDisabled();
     fireEvent.click(start);
     expect(onSend).toHaveBeenCalledWith(
-      "/goal edit start\nobjective: Reconcile the October invoices\nc1: Summary sheet saved\nc2 (mine): Looks tidy");
+      "/goal edit start job-1\nobjective: Reconcile the October invoices\nc1: Summary sheet saved\nc2 (mine): Looks tidy");
   });
 
   it("sends a plain /goal start, naming the goal (L7-5h), when nothing was changed and nothing is flagged", () => {
@@ -116,7 +116,7 @@ describe("goal card", () => {
     expect(onSend).toHaveBeenLastCalledWith("/goal note credits are in credits/");
     fireEvent.click(screen.getByText("jobs.goal.edit"));
     fireEvent.click(screen.getByText("jobs.goal.start"));
-    expect(onSend.mock.lastCall?.[0]).toMatch(/^\/goal edit start\nobjective: Reconcile the October invoices\nc1: /);
+    expect(onSend.mock.lastCall?.[0]).toMatch(/^\/goal edit start job-1\nobjective: Reconcile the October invoices\nc1: /);
   });
 
   it("says what blocks it and the one step, and Resume sends /goal resume naming the goal (L7-5h)", () => {
@@ -189,6 +189,12 @@ describe("a goal a newer one took over from (L7-5h)", () => {
     expect(onSend).toHaveBeenLastCalledWith("/goal resume job-1");
     fireEvent.click(screen.getByText("jobs.goal.stop"));
     expect(onSend).toHaveBeenLastCalledWith("/goal clear job-1");
+  });
+
+  it("its running card (the job's own frame) never offers Edit (#989 review r2 MF2)", () => {
+    show({ ...ACTIVE, left: true }, { phase: "running" });
+    expect(screen.getByText("jobs.goal.pause")).toBeTruthy();
+    expect(screen.queryByText("jobs.goal.edit")).toBeNull();
   });
 
   it("one that never started shows its card, not the edit form, and Start names it", () => {

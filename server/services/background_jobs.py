@@ -100,6 +100,8 @@ class Job:
     goal_items: dict = field(default_factory=dict, repr=False)
     goal_spend: tuple = field(default=(None, None), repr=False)
     goal_status: str | None = field(default=None, repr=False)
+    # L7-5h: a newer goal took over from this one before it ran again (its card never edits; buttons name its id).
+    goal_left: bool = field(default=False, repr=False)
     pausing: bool = field(default=False, repr=False)
     # L7-5f: what the user said when they declined one of this job's cards ("don't delete, move them to trash"), last
     # USER_NOTES_MAX. The "was the goal reached" judge reads them: the user changed the goal on the way (L7-7 T11 r2).
@@ -112,6 +114,7 @@ class Job:
             frame["goal_state"] = goal_mode.goal_state(
                 self.goal_spec, self.goal_progress, status=self.goal_status or "active", items=self.goal_items,
                 finished=self.phase == "finished", spend_usd=self.goal_spend[0], cap_usd=self.goal_spend[1])
+            frame["goal_state"]["left"] = self.goal_left
         return frame
 
     def _frame(self) -> dict:
@@ -305,7 +308,8 @@ def start_placed(conversation_id: str, goal: str, criteria: list[dict], placed: 
     return job
 
 
-def start_goal(conversation_id: str, task_id: str, spec, *, origin: str = "mac", resume: int | None = None) -> Job:
+def start_goal(conversation_id: str, task_id: str, spec, *, origin: str = "mac", resume: int | None = None,
+               left: bool = False) -> Job:
     """L7-3: the user pressed Start goal (or sent `/goal start`): the goal's not-started row runs as a job, its id
     the row's, its acceptance the goal's checks. The objective is the user's own words (S64-0: False). L7-4:
     `resume` (the row's version) re-queues a goal the user resumed: the same row, a fresh budget of its tier and cap,
@@ -313,7 +317,7 @@ def start_goal(conversation_id: str, task_id: str, spec, *, origin: str = "mac",
     from server.services import goal_mode
     job = Job(job_id=task_id, conversation_id=conversation_id, goal=_goal(spec.objective),
               acceptance=goal_mode.acceptance(spec), origin="phone" if origin == "phone" else "mac",
-              outside_seen=resume is not None, goal_spec=spec, goal_resume=resume)
+              outside_seen=resume is not None, goal_spec=spec, goal_resume=resume, goal_left=left)
     _forget_old_finished()
     _jobs[job.job_id] = job
     job.task = asyncio.get_running_loop().create_task(_run(job), context=contextvars.Context())

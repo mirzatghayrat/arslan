@@ -70,8 +70,6 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None, 
     target = named or row
     if plain in {"", "status"}:
         return await _status(target, say) if target is not None else say("goal_missing")
-    if plain in {"start", "start confirm", "resume"} and running is not None and running is not target:
-        return say("goal_exists")                       # one goal runs at a time
     if plain in {"start", "start confirm"}:
         return await _start(conversation_id, target, say, confirm=plain == "start confirm", source=source)
     if plain == "resume":
@@ -83,7 +81,11 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None, 
     if rest.lower() == "pause":
         return await _pause(running or row, say)
     if rest.split(None, 1)[0].lower() == "edit":
-        return await _edit(conversation_id, row, rest, say, source=source)
+        # #989 review r2 MF2: the form's first line names its goal (`/goal edit [start] <id>`); without one, the latest
+        head = rest.splitlines()[0].split()
+        edited = next((r for r in rows if len(head) > 1 and r.id == head[-1]), None)
+        return await _edit(conversation_id, edited or row, rest, say, source=source,
+                           start=[w.lower() for w in head[1:len(head) - (edited is not None)]] == ["start"])
     if running is not None:
         return say("goal_exists")
     replacing = row if row is not None and _open(row) else None
@@ -94,6 +96,20 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None, 
 
 def _open(row) -> bool:
     return row.phase not in {"succeeded", "cancelled", "failed"}
+
+
+def _was_left(row) -> bool:
+    """L7-5h: a newer goal took over from this one (its card never edits; its buttons name its id)."""
+    return bool((row.privacy or {}).get("goal_left_for"))
+
+
+async def _row_by_id(conversation_id: str, task_id: str):
+    return next((row for row in await _goal_rows(conversation_id) if row.id == task_id), None)
+
+
+async def _another_running(conversation_id: str, row) -> bool:
+    """L7-5h: another goal of this conversation is at work."""
+    return any(other.id != row.id and _open(other) and _running(other) for other in await _goal_rows(conversation_id))
 
 
 def _running(row) -> bool:
@@ -325,6 +341,8 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
         return say("goal_missing")
     if row.phase != "waiting_user" or row.pause_reason != "goal_not_started" or background_jobs.goal_job(row.id):
         return await _status(row, say)
+    if await _another_running(conversation_id, row):
+        return say("goal_exists")           # L7-5h: one goal runs at a time; every Start (and Edit and Start) is here
     spec = GoalSpec.model_validate(row.privacy["goal_spec"])
     flagged = unverifiable(spec)
     if flagged and not confirm:
@@ -371,7 +389,7 @@ async def _start(conversation_id: str, row, say, *, confirm: bool, source: str |
             await repo.park_goal(row.id, spec.model_dump(mode="json"), owner_id=row.owner_id)
     if background_jobs.goal_job(row.id):    # a second Start that came in during the awaits above: no await from here
         return await _status(row, say)
-    background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac")
+    background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac", left=_was_left(row))
     from server.services.goal_mode import unprotected
     return say("goal_started", objective=spec.objective[:200]) + (
         "\n" + say("goal_unprotected_start") if unprotected(spec.protected) else "")
@@ -405,8 +423,11 @@ async def _resume(conversation_id: str, row, say, *, source: str | None) -> str:
     if row.phase not in {"waiting_user", "failed"} or row.pause_reason in {"goal_not_started", "goal_changed"} \
             or background_jobs.goal_job(row.id):
         return await _status(row, say)
+    if await _another_running(conversation_id, row):
+        return say("goal_exists")           # L7-5h: one goal runs at a time
     spec = GoalSpec.model_validate(row.privacy["goal_spec"])
-    background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac", resume=row.version)
+    background_jobs.start_goal(conversation_id, row.id, spec, origin=source or "mac", resume=row.version,
+                               left=_was_left(row))
     return say("goal_resumed", objective=spec.objective[:200])
 
 
@@ -502,7 +523,7 @@ def edited_spec(old: GoalSpec, text: str) -> GoalSpec:
                     usd_cap=old.usd_cap)
 
 
-async def _edit(conversation_id: str, row, rest: str, say, *, source: str | None) -> str:
+async def _edit(conversation_id: str, row, rest: str, say, *, source: str | None, start: bool = False) -> str:
     """`/goal edit` (or `/goal edit start`): a spec revision from the card's form. A running goal is paused first.
     The goal then waits for Start again, with a fresh seen set and streak; the protected set is recorded at Start."""
     from arslan.companion.contracts import TaskSpec
@@ -515,7 +536,7 @@ async def _edit(conversation_id: str, row, rest: str, say, *, source: str | None
         return say("goal_missing")
     if background_jobs.goal_job(row.id):
         await _pause(row, say)
-        row = await _goal_row(conversation_id)
+        row = await _row_by_id(conversation_id, row.id)     # this goal again, never "the latest" (#989 r2 MF2)
         if row is None or background_jobs.goal_job(row.id):
             return await _status(row, say) if row is not None else say("goal_missing")
     try:
@@ -528,8 +549,9 @@ async def _edit(conversation_id: str, row, rest: str, say, *, source: str | None
             **task.model_dump(mode="json"), "instruction": spec.objective, "revision": task.revision + 1,
             "acceptance": acceptance(spec)}), owner_id=row.owner_id)
         await repo.park_goal(row.id, spec.model_dump(mode="json"), owner_id=row.owner_id)
-    if rest.splitlines()[0].strip().lower() == "edit start":
-        return await _start(conversation_id, await _goal_row(conversation_id), say, confirm=False, source=source)
+    if start:
+        return await _start(conversation_id, await _row_by_id(conversation_id, row.id), say, confirm=False,
+                            source=source)
     return say("goal_edited", objective=spec.objective[:200], checks=_listed(spec, unverifiable(spec)))
 
 
@@ -599,33 +621,40 @@ async def frame_of(row) -> dict:
             "detail": row.pause_reason if started else None, "budget": None, "run_id": None, "origin": "mac",
             "criteria": [{"id": c["id"], "description": c["description"], "status": c["status"]}
                          for c in state["checks"]],
-            "goal_state": {**state, "left": bool((row.privacy or {}).get("goal_left_for"))}}   # L7-5h
+            "goal_state": {**state, "left": _was_left(row)}}   # L7-5h
 
 
 async def open_frames(conversation_id: str) -> list[dict]:
-    """The conversation's goal card when no job of it is running: a socket that opens gets it (a not-started goal, or
-    one paused, blocked or interrupted by a restart). None without a goal row, so nothing changes without one."""
+    """The conversation's goal cards when no job of theirs is running: a socket that opens gets them (a not-started
+    goal, or one paused, blocked or interrupted by a restart). None without a goal row, so nothing changes without one.
+    L7-5h (#989 review r2 MF3): every earlier goal a newer one took over from that still waits keeps its card, whatever
+    the latest goal's state (running, ended, or itself taken over)."""
     from server.services import background_jobs
-    row = await _goal_row(conversation_id)
-    if row is None or row.phase in {"succeeded", "cancelled"} or background_jobs.goal_job(row.id):
+    rows = await _goal_rows(conversation_id)
+    if not rows:
         return []
-    # L7-5h: the goals this one took over from, still waiting, keep their cards.
-    return [*[await frame_of(left) for left in await _left_for(conversation_id, row.id)], await frame_of(row)]
+    latest = rows[0]
+    shown = [] if latest.phase in {"succeeded", "cancelled"} or background_jobs.goal_job(latest.id) else [latest]
+    return [await frame_of(row) for row in [*reversed(_waiting_earlier(rows)), *shown]]
 
 
 async def publish(conversation_id: str, emit) -> None:
-    """After a `/goal` command: the goal's card, when no job of it is running (a running job sends its own)."""
+    """After a `/goal` command: the goal's card, when no job of it is running (a running job sends its own), and
+    (L7-5h) every earlier goal that still waits."""
     from server.services import background_jobs
-    row = await _goal_row(conversation_id)
-    if row is None or background_jobs.goal_job(row.id) or (row.phase, row.pause_reason) == ("cancelled", RAN_ONCE):
+    rows = await _goal_rows(conversation_id)
+    if not rows:
+        return
+    for left in reversed(_waiting_earlier(rows)):
+        emit(await frame_of(left))      # L7-5h: an earlier goal, as it was (a running one sends its own)
+    latest = rows[0]
+    if background_jobs.goal_job(latest.id) or (latest.phase, latest.pause_reason) == ("cancelled", RAN_ONCE):
         return      # L7-5e: a goal handed to a plain job has no card of its own; the job sends its own
-    for left in await _left_for(conversation_id, row.id):
-        emit(await frame_of(left))      # L7-5h: the goal it took over from, as it was (a running one sends its own)
-    emit(await frame_of(row))
+    emit(await frame_of(latest))
 
 
-async def _left_for(conversation_id: str, task_id: str) -> list:
-    """L7-5h: the goal rows `task_id` took over from that still wait (not ended, no job of theirs running)."""
+def _waiting_earlier(rows: list) -> list:
+    """L7-5h: the goal rows before the latest (`rows` is latest first) that still wait: not ended, no job of theirs
+    running. Each was taken over by a newer goal."""
     from server.services import background_jobs
-    return [row for row in await _goal_rows(conversation_id) if (row.privacy or {}).get("goal_left_for") == task_id
-            and _open(row) and not background_jobs.goal_job(row.id)]
+    return [row for row in rows[1:] if _open(row) and not background_jobs.goal_job(row.id)]

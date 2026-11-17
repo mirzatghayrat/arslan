@@ -274,3 +274,81 @@ def test_the_reply_line_is_in_all_six_languages_with_every_part():
     for locale in ("en", "zh", "ja", "es", "de", "fr"):
         text = runtime_messages.render("goal_left", locale, objective="OBJ", status="STATE", round=7, back="BACK")
         assert all(part in text for part in ("OBJ", "STATE", "7", "BACK")), (locale, text)
+
+
+# -- #989 review r2: one goal at a time on every route to running (MF2); every earlier goal keeps its card (MF3) -----
+
+async def _a_runs_again_after_b_took_over(execution_db, jobs):
+    await _say(f"/goal {PROMPT}")
+    (a,) = await _goals(execution_db)
+    await _set_state(a, pause_reason="goal_blocked")
+    await _say(f"/goal {NEXT}")
+    await _say(f"/goal resume {a.id}")
+    (job,) = jobs
+    job.phase = "running"
+    background_jobs._jobs[a.id] = job                     # A's job is live
+    a, b = await _goals(execution_db)
+    return a, b, job
+
+
+async def test_edit_and_start_of_the_new_goal_while_the_earlier_one_runs_answers_goal_exists(execution_db, active,
+                                                                                            model, jobs):
+    a, b, _ = await _a_runs_again_after_b_took_over(execution_db, jobs)
+    line = await _say(f"/goal edit start {b.id}\nobjective: {NEXT}\nc1 (mine): The table lists the key numbers")
+    assert line == runtime_messages.render("goal_exists", "en")
+    assert [job.job_id for job in jobs] == [a.id] and background_jobs.goal_job(b.id) is None
+
+
+async def test_the_running_earlier_goals_card_says_it_was_left_and_its_edit_names_it(execution_db, active, model,
+                                                                                    jobs):
+    a, b, job = await _a_runs_again_after_b_took_over(execution_db, jobs)
+    assert job.frame()["goal_state"]["left"] is True       # its card never offers Edit (GoalCard: !g.left)
+    # its live job sends its card; a window that opens gets only the waiting goal's (no stale copy of A's)
+    assert [frame["job_id"] for frame in await goal_command.open_frames(CID)] == [b.id]
+    b_spec = b.privacy["goal_spec"]
+    await _say(f"/goal edit {a.id}\nobjective: {PROMPT}\nc1 (mine): renamed")
+    a, b = await _goals(execution_db)
+    assert b.privacy["goal_spec"] == b_spec                # the edit names its own goal, never "the latest"
+
+
+async def test_a_chain_of_takeovers_keeps_every_earlier_goals_card(execution_db, active, model, jobs):
+    await _say(f"/goal {PROMPT}")
+    await _say(f"/goal {NEXT}")
+    await _say("/goal Write a summary of report.md into summary.md")
+    a, b, c = await _goals(execution_db)
+    assert [frame["job_id"] for frame in await goal_command.open_frames(CID)] == [a.id, b.id, c.id]
+    frames = []
+    await goal_command.publish(CID, frames.append)
+    assert [frame["job_id"] for frame in frames] == [a.id, b.id, c.id]
+
+
+@pytest.mark.parametrize("latest", ["running", "succeeded"])
+async def test_the_earlier_goal_keeps_its_card_while_the_new_one_runs_or_after_it_ends(execution_db, active, model,
+                                                                                      jobs, monkeypatch, latest):
+    await _say(f"/goal {PROMPT}")
+    (a,) = await _goals(execution_db)
+    await _set_state(a, pause_reason="goal_paused")
+    await _say(f"/goal {NEXT}")
+    a, b = await _goals(execution_db)
+    if latest == "running":
+        monkeypatch.setattr(background_jobs, "goal_job", lambda task_id: object() if task_id == b.id else None)
+    else:
+        await _set_state(b, phase="succeeded", pause_reason=None)
+    shown = await goal_command.open_frames(CID)
+    assert [frame["job_id"] for frame in shown] == [a.id]
+    assert shown[0]["goal_state"]["status"] == "paused" and shown[0]["goal_state"]["left"] is True
+
+
+
+async def test_resuming_another_goal_while_one_runs_answers_goal_exists(execution_db, active, model, jobs):
+    await _say(f"/goal {PROMPT}")
+    (a,) = await _goals(execution_db)
+    await _set_state(a, pause_reason="goal_blocked")
+    await _say(f"/goal {NEXT}")
+    a, b = await _goals(execution_db)
+    await _say("/goal start confirm")                       # B runs
+    (job,) = jobs
+    job.phase = "running"
+    background_jobs._jobs[b.id] = job
+    assert await _say(f"/goal resume {a.id}") == runtime_messages.render("goal_exists", "en")
+    assert [job.job_id for job in jobs] == [b.id]

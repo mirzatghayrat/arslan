@@ -48,8 +48,9 @@ const rowOf = (c: GoalCheckState): Row => ({ id: c.id, kind: c.kind, mine: c.use
   outputs: c.outputs, text: c.kind === "check" ? c.description.replace(/^check:\s*/i, "") : c.description });
 
 /** The form as `/goal edit` lines (the card's grammar). */
-export function editLines(goal: string, rows: Row[], start: boolean): string {
-  return [`/goal edit${start ? " start" : ""}`, `objective: ${objectiveOf(goal).replace(/\s+/g, " ")}`,
+export function editLines(goal: string, rows: Row[], start: boolean, id?: string): string {
+  // L7-5h (#989 review r2 MF2): the first line names the card's own goal, never "the latest".
+  return [`/goal edit${start ? " start" : ""}${id ? ` ${id}` : ""}`, `objective: ${objectiveOf(goal).replace(/\s+/g, " ")}`,
     ...rows.filter((r) => r.text.trim()).map((r) => r.kind === "check"
       ? `check: ${r.text.trim()}${r.outputs.length ? ` outputs: ${r.outputs.join(" ")}` : ""}`
       : `${r.id ?? "new"}${r.mine ? " (mine)" : ""}: ${r.text.trim().replace(/\s+/g, " ")}`)].join("\n");
@@ -63,7 +64,7 @@ function GoalForm({ job, started, onSend, onClose }: { job: Job; started: boolea
   const blocked = rows.some((r) => r.text.trim() && r.flagged && !r.mine);
   const changed = editLines(job.goal, rows, false) !== editLines(job.goal, initial, false);
   function start() {
-    onSend?.(started || changed ? editLines(job.goal, rows, true) : `/goal start ${job.jobId}`);   // L7-5h: by its id
+    onSend?.(started || changed ? editLines(job.goal, rows, true, job.jobId) : `/goal start ${job.jobId}`);   // L7-5h: by its id
   }
   return <section data-testid="goal-form" data-goal-card={job.jobId} aria-label={t("jobs.goal.kickerEdit")}
     className="my-2 rounded-xl border border-primary/40 bg-surface/60 px-4 py-3 text-xs">
