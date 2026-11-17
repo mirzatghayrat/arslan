@@ -12,10 +12,12 @@ from __future__ import annotations
 import asyncio
 from dataclasses import replace
 
+import httpx
 import pytest
 from sqlalchemy import select
 
 from arslan.execution_budget import current as current_budget, run_budget
+from arslan.models import LLMResponse
 from server.db.task_models import CompanionTask
 from server.orchestrator import answer_salvage, arslan as arslan_turn, tool_loop
 from server.services import personal_context as pc, runtime_messages, task_context, task_service, task_validation
@@ -64,6 +66,61 @@ async def test_a_draft_that_times_out_twice_says_so_and_keeps_no_goal(execution_
     assert line == runtime_messages.render("goal_draft_failed", "en")
     assert len(model.requests) == 2                                     # the one bounded retry, as before
     assert await _goal_rows(execution_db) == [] and jobs == []
+
+
+def _status_error(code: int) -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "https://api.example.test/chat/completions")
+    return httpx.HTTPStatusError(f"Client error '{code}'", request=request,
+                                 response=httpx.Response(code, request=request, text=f"error {code}"))
+
+
+class Fails(Model):
+    """Every drafting request fails with `error`, or answers `content` (a reply that isn't the drafting format)."""
+
+    def __init__(self, error=None, content=None):
+        super().__init__()
+        self.error, self.content = error, content
+
+    async def chat(self, system, user, history=None, tools=None, **kw):
+        self.requests.append({"system": system, "user": user, "tools": tools})
+        if self.error is not None:
+            raise self.error
+        return LLMResponse(usage={}, content=self.content)
+
+
+@pytest.mark.parametrize("failure", [
+    pytest.param(dict(error=_status_error(429)), id="rate-limit-429"),
+    pytest.param(dict(error=httpx.ConnectError("connection refused")), id="connection-error"),
+    pytest.param(dict(error=_status_error(402)), id="upstream-402"),
+    pytest.param(dict(error=_status_error(503)), id="upstream-5xx"),
+    pytest.param(dict(content="I would check that the report reads well."), id="unparseable-reply"),
+    pytest.param(dict(content='{"criteria": []}'), id="no-criteria"),
+])
+async def test_every_drafting_failure_says_the_draft_failed_and_keeps_no_goal(execution_db, active, monkeypatch,
+                                                                             jobs, failure):
+    # The user, 11-17: no drafting failure may leave the turn (an INTERNAL_ERROR and a closed socket)
+    model = Fails(**failure)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
+    line = await _say(f"/goal {PROMPT}")
+    assert line.startswith(runtime_messages.render("goal_draft_failed", "en")), line
+    assert model.requests and await _goal_rows(execution_db) == [] and jobs == []
+
+
+async def test_a_balance_refusal_says_why_the_draft_failed(execution_db, active, monkeypatch, jobs):
+    from server.orchestrator import llm_errors
+    model = Fails(error=_status_error(402))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
+    line = await _say(f"/goal {PROMPT}")
+    why = llm_errors.explain(str(model.error), locale="en")
+    assert why and line == runtime_messages.render("goal_draft_failed", "en") + "\n\n" + why
+
+
+async def test_a_budget_stop_while_drafting_still_reaches_the_task(execution_db, active, monkeypatch, jobs):
+    from arslan.execution_budget import BudgetExceeded
+    model = Fails(error=BudgetExceeded("Execution budget exhausted: usd."))
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
+    with pytest.raises(BudgetExceeded):                      # the socket's TASK_REVIEW_REQUIRED, as before
+        await _say(f"/goal {PROMPT}")
 
 
 async def _turn_row(execution_db) -> CompanionTask:
@@ -123,3 +180,67 @@ def test_a_timeout_in_a_resumed_task_is_a_review_frame_too(window_client, monkey
             frames, waiting = _frames_until_end(window)
             assert not waiting and frames[-1] == {"type": "error", "code": "TASK_REVIEW_REQUIRED",
                                                   "message": "task_execution_failed", "recoverable": True}, frames
+
+
+# -- the user, 11-17: "drafting the checks" with a working Cancel ------------------------------------------------------
+
+class Waits(Model):
+    """The drafting request waits until the test lets it go (or the turn is cancelled)."""
+
+    def __init__(self):
+        super().__init__()
+        self.asked, self.go = asyncio.Event(), asyncio.Event()
+
+    async def chat(self, system, user, history=None, tools=None, **kw):
+        self.requests.append({"system": system, "user": user, "tools": tools})
+        self.asked.set()
+        await self.go.wait()
+        return await super().chat(system, user, history, tools, **kw)
+
+
+def _goal_turn(monkeypatch, model):
+    from server.orchestrator import arslan
+    from server.services import settings_service
+
+    async def on(db):
+        return True
+    monkeypatch.setattr(settings_service, "goal_mode", on)
+    monkeypatch.setattr(arslan, "_after_turn_later", lambda *a, **k: None)
+    monkeypatch.setattr(tool_loop, "_get_adapter", lambda: model)
+    events = []
+    turn = asyncio.create_task(arslan.handle_user_message(CID, f"/goal {PROMPT}", events.append))
+    return turn, events
+
+
+async def test_the_window_hears_drafting_with_the_runs_id_before_the_draft_is_asked(execution_db, active, monkeypatch,
+                                                                                    jobs):
+    model = Waits()
+    turn, events = _goal_turn(monkeypatch, model)
+    await asyncio.wait_for(model.asked.wait(), 5)
+    (drafting,) = [event for event in events if event["type"] == "goal_drafting"]
+    assert type(drafting["run_id"]) is int
+    assert not any(event["type"] == "stream_chunk" for event in events)        # nothing answered yet
+    model.go.set()
+    await asyncio.wait_for(turn, 5)
+    assert len(await _goal_rows(execution_db)) == 1
+
+
+async def test_cancel_while_drafting_ends_the_turn_with_no_goal_and_no_paused_task(execution_db, active, monkeypatch,
+                                                                                  jobs):
+    from server.api.runs import cancel_run
+    model = Waits()
+    turn, events = _goal_turn(monkeypatch, model)
+    await asyncio.wait_for(model.asked.wait(), 5)
+    (drafting,) = [event for event in events if event["type"] == "goal_drafting"]
+    async with execution_db() as db:
+        assert await cancel_run(drafting["run_id"], db) == {"ok": True}     # the window's Cancel: the run's stop
+    try:
+        await asyncio.wait_for(turn, 5)                       # the run's stop ends the turn; it may re-raise
+    except asyncio.CancelledError:
+        pass
+    assert any(event["type"] == "run_cancelled" for event in events), [event["type"] for event in events]
+    assert not model.go.is_set() and len(model.requests) == 1          # the draft was never answered, nor retried
+    async with execution_db() as db:
+        rows = (await db.scalars(select(CompanionTask).where(CompanionTask.conversation_id == CID))).all()
+    assert await _goal_rows(execution_db) == [] and jobs == []
+    assert rows and all(row.phase == "cancelled" for row in rows), [(row.phase, row.pause_reason) for row in rows]

@@ -824,6 +824,8 @@ export type ArslanServerMessage =
   // S3-M2 reattach: sent between the history push and the journal replay when the
   // conversation has an in-flight run — arms the stop button before any stream frame.
   | { type: "run_in_progress"; run_id: number }
+  // L7-5h: `/goal` is drafting its checks (one model request, which can take minutes). The run's own stop cancels it.
+  | { type: "goal_drafting"; run_id?: number }
   // stream_end may carry an HTML deliverable packaged by the backend spawn-output
   // exit (HX-2): {kind:"html", filename, title, bytes, complete, content}. It rides
   // the SAME frame the store turns into the chat item. 🔒 Backend only.

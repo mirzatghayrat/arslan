@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 
 import json
+import logging
 import re
 import shlex
 import uuid
@@ -20,6 +21,8 @@ from dataclasses import asdict, replace
 from pydantic import ValidationError
 
 from server.services.goal_mode import CRITERIA_MAX, OBJECTIVE_MAX, GoalCheck, GoalSpec
+
+logger = logging.getLogger(__name__)
 
 COMMAND = re.compile(r"\s*/goal(?:\s+|$)(.*)", re.S)
 CHECK_LINE = re.compile(r"^\s*`?check:\s*(.+?)`?\s*$", re.I | re.M)
@@ -41,8 +44,9 @@ def parse(text: str) -> str | None:
     return match.group(1).strip() if match else None
 
 
-async def handle(conversation_id: str, rest: str, *, source: str | None = None) -> str:
-    """One `/goal` command; returns the host line that answers it."""
+async def handle(conversation_id: str, rest: str, *, source: str | None = None, drafting=None) -> str:
+    """One `/goal` command; returns the host line that answers it. `drafting` (L7-5h): called once, just before the
+    drafting request, so the window can show that the checks are being drafted (and offer to cancel)."""
     from server.services import runtime_messages
     locale = await runtime_messages.selected_locale()
     say = lambda key, **values: runtime_messages.render(key, locale, **values)  # noqa: E731
@@ -67,7 +71,7 @@ async def handle(conversation_id: str, rest: str, *, source: str | None = None) 
         return say("goal_exists")
     if verb == "from" and tail and " " not in tail:
         return await _from_job(conversation_id, tail, say)
-    return await _set(conversation_id, rest, say)
+    return await _set(conversation_id, rest, say, drafting=drafting)
 
 
 def _open(row) -> bool:
@@ -162,7 +166,8 @@ def earlier_files(conversation_id: str) -> tuple[str, ...]:
     return ()
 
 
-async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, ...] | None = None) -> str:
+async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, ...] | None = None,
+               drafting=None) -> str:
     """`/goal [$N] <objective>`: drafts the checks with one request and no tools, then writes the not-started row.
     L7-6: `given` (a finished job's checks, `/goal from`) replaces the drafting."""
     from arslan.execution_budget import MAX_USD_CAP, run_budget
@@ -196,13 +201,25 @@ async def _set(conversation_id: str, rest: str, say, *, given: tuple[GoalCheck, 
         listed = ("\n\nFiles this conversation's earlier work saved (when the goal means one of them, use its exact "
                   "path):\n" + wrap_external("\n".join(earlier))) if earlier else ""
         # L7-5h: drafting is a reasoning model's answer with no tools, as the goal judge's verdict is: it has the
-        # judge's time, not a chat step's 75 s. Still out of time after the retry, it says so; no task is paused.
+        # judge's time, not a chat step's 75 s. Any failure of the request (out of time after the retry, a rate limit,
+        # the network, the provider refusing) says the draft failed, and why when the provider's error is a known one;
+        # it never leaves the turn (an INTERNAL_ERROR that closed the socket). A budget stop or a task error still
+        # does: the socket shows those for review.
+        from arslan.execution_budget import BudgetExceeded
+        from server.orchestrator import llm_errors
+        from server.services.task_repository import TaskError
         from server.services.task_validation import _GOAL_JUDGE_TIMEOUT_S
+        if drafting is not None:
+            drafting()
         try:
             response = await _chat_retry(adapter, DRAFT_SYSTEM, "The user's goal:\n" + wrap_external(objective) + listed,
                                          tools=None, timeout=_GOAL_JUDGE_TIMEOUT_S)
-        except TimeoutError:
-            return say("goal_draft_failed")
+        except (BudgetExceeded, TaskError):
+            raise
+        except Exception as failed:  # noqa: BLE001 — every other failure of the request is a failed draft
+            logger.warning("goal drafting failed: %s", type(failed).__name__)
+            why = await llm_errors.explain_current(str(failed))
+            return say("goal_draft_failed") + (f"\n\n{why}" if why else "")
         drafted = () if getattr(response, "tool_calls", None) else drafted_checks(response.content, objective)
         # A judgement over a file the host itself listed (this conversation's earlier work saved it) is vouched for as
         # a path the user's objective names would be; any other drafted path is not (drafted_checks).

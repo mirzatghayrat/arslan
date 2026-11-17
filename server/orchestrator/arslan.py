@@ -377,7 +377,9 @@ async def _goal_command(conversation_id: str, user_message: str, emit: EventSink
             return False
 
     async def body(run_emit):
-        line = await goal_command.handle(conversation_id, rest, source=source)
+        # L7-5h: the window shows "drafting the checks" with a Cancel (the run's own stop) while the draft is asked.
+        line = await goal_command.handle(conversation_id, rest, source=source,
+                                         drafting=lambda: run_emit({"type": "goal_drafting"}))
         run_emit({"type": "stream_chunk", "content": line})
         run_emit({"type": "stream_end", "message_id": await memory.add_message(conversation_id, "arslan", line)})
         await goal_command.publish(conversation_id, run_emit)    # L7-6: the goal's card, when no job of it runs

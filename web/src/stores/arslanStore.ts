@@ -104,6 +104,8 @@ interface ArslanState {
   // stream_start's run_id — both host and spawn runs). The stop button POSTs
   // /runs/{activeRunId}/cancel. Cleared on stream_end/error/run_cancelled.
   activeRunId: number | null;
+  // L7-5h: `/goal` is drafting its checks; `runId` is the run to stop for Cancel. Cleared when anything answers.
+  goalDrafting: { runId: number | null } | null;
   taskState: import("../api/tasks").TaskFrame | null;
   taskSequences: Record<string, number>;
   // The Web Speech speaker owes the engine at least one utterance end. Conversation
@@ -351,6 +353,7 @@ function initialData() {
     cardExpired: false,
     cardExpiredKind: null as "ask" | "enroll" | null,
     activeRunId: null as number | null,
+    goalDrafting: null as { runId: number | null } | null,
     taskState: null as import("../api/tasks").TaskFrame | null,
     taskSequences: {} as Record<string, number>,
     speaking: false,
@@ -358,6 +361,9 @@ function initialData() {
 }
 
 type SetState = (partial: Partial<ArslanState>) => void;
+
+// L7-5h: the frames after which `/goal` is no longer drafting.
+const DRAFT_OVER = new Set(["stream_chunk", "stream_end", "run_cancelled", "error", "message"]);
 type GetState = () => ArslanState;
 
 function makeActions(set: SetState, get: GetState) {
@@ -483,6 +489,8 @@ function makeActions(set: SetState, get: GetState) {
       if (RESPONDING_TYPES.has(frame.type)) {
         set({ thinking: false });
       }
+      // L7-5h: the draft is over once the turn answers, ends or is stopped.
+      if (state.goalDrafting && DRAFT_OVER.has(frame.type)) set({ goalDrafting: null });
       // Maps a server row (history row or `message` frame — same field names,
       // `spawn_id` optional) to a renderable thread item.
       const rowToItem = (row: {
@@ -529,7 +537,7 @@ function makeActions(set: SetState, get: GetState) {
           // half copy of the answer plus a "working" row whose timer never stopped.
           if (state.streaming) _voiceStop();
           set({
-            items, lastMessageId: lastId, activitySteps: [], activeRunId: null,
+            items, lastMessageId: lastId, activitySteps: [], activeRunId: null, goalDrafting: null,
             streaming: false, streamingText: "", streamingDrafts: [], thinking: false, workStartedAt: null, queued: false,
             inserted: false, streamSource: null,
           });
@@ -562,6 +570,10 @@ function makeActions(set: SetState, get: GetState) {
         case "job_spoken":
           set({ jobNotice: { seq: (state.jobNotice?.seq ?? 0) + 1, jobId: frame.job_id,
                              kind: "finished", outcome: frame.outcome, goal: frame.goal } });
+          break;
+        case "goal_drafting":
+          set({ goalDrafting: { runId: frame.run_id ?? null }, thinking: true,
+                workStartedAt: state.workStartedAt ?? Date.now(), activeRunId: frame.run_id ?? state.activeRunId });
           break;
         case "run_in_progress":
           // S3-M2 reattach: the server announces an in-flight run right after the

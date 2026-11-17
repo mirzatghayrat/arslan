@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Check, Circle, Loader2, MessageSquare, Pause, Pencil, Play, Square, Target, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { api } from "../api/client";
 import { backgroundJobsApi } from "../api/tasks";
 import type { GoalCheckState, JobCard as Job } from "../api/client.types";
 import { useArslanStore } from "../stores/arslanStore";
@@ -177,4 +178,26 @@ export function GoalChip() {
     <span className="min-w-0 truncate font-semibold">{objectiveOf(open.goal)}</span>
     <span className="shrink-0 text-muted-foreground">{t("jobs.goal.chipCount", { met: String(open.goalState.met), total: String(open.goalState.total) })}</span>
   </button>;
+}
+
+/** L7-5h (the user, 11-17): while `/goal` drafts its checks (one request, which can take minutes), the composer says
+ *  so, with a Cancel that stops the run, as the composer's stop does. The draft then creates no goal. */
+export function GoalDraftingChip() {
+  const { t } = useTranslation();
+  const drafting = useArslanStore((s) => s.goalDrafting);
+  const [stopping, setStopping] = useState(false);
+  if (!drafting) return null;
+  const runId = drafting.runId;
+  const cancel = () => {                                        // a second click: the button is disabled by then
+    if (runId == null) return;
+    setStopping(true);
+    api.cancelRun(runId).catch(() => setStopping(false));      // the outcome arrives as run_cancelled
+  };
+  return <div data-testid="goal-drafting" role="status"
+    className="inline-flex max-w-full items-center gap-1.5 self-start rounded-xl border border-primary/35 bg-primary/10 px-2 py-[3px] text-[10px] leading-snug">
+    <Loader2 size={10} className="shrink-0 animate-spin text-primary" aria-hidden />
+    <span className="min-w-0 truncate font-semibold">{t("jobs.goal.drafting")}</span>
+    {runId != null && <button type="button" className="shrink-0 underline hover:opacity-80 disabled:opacity-50"
+      disabled={stopping} onClick={cancel}>{t("jobs.goal.cancelDraft")}</button>}
+  </div>;
 }

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
-import { GoalChip } from './GoalCard';
+import { GoalChip, GoalDraftingChip } from './GoalCard';
 import RememberedLine from './RememberedLine';
 import CapabilityResultLine from './capabilities/CapabilityResultLine';
 import PlanProposalCard from './projects/PlanProposalCard';
@@ -1006,6 +1006,7 @@ export default function OrchestratorChat({
               {...attach.dndHandlers}
             >
               <GoalChip />
+              <GoalDraftingChip />
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
               <ComposerInput
                 id="chat-message-input"
