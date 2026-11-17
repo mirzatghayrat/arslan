@@ -162,6 +162,31 @@ async def test_after_outside_content_a_check_command_gets_the_same_network_rule_
     assert host.ran == model.ran == [(command, True)]                 # offline, as the rule says
 
 
+async def test_a_second_check_line_that_doesnt_fit_the_hard_limit_is_not_started(
+        _a_mac_with_a_sandbox, monkeypatch, tmp_path):
+    """L7-5g: each line is one tool call; with room for one, the second stays not run, never stopped by the limit."""
+    from arslan.execution_budget import Limits
+    calls = _Calls(monkeypatch, True)
+    one, two = _line("ls"), GoalCheck(id="check-2", description="check: pwd", kind="check", argv=("pwd",),
+                                      by_user=True)
+    goal = GoalSpec(objective="Two checks", checks=(one, two), protected=goal_mode.record_protected(tmp_path, (one,)))
+
+    async def folder():
+        return tmp_path
+    monkeypatch.setattr(goal_checks, "_working_folder", folder)
+    request = types.SimpleNamespace(goal=goal, emit=calls.frames.append, tool_timeout_s=5, confirm_command=calls.card,
+                                    confirm_workspace_write=None, confirm_schedule=None, conversation_id="c1",
+                                    log_events=False, caller=None)
+    state = types.SimpleNamespace(resolve_tools=calls.resolve, tool_trace=[], convo=[], mcp_fail_counts={},
+                                  mcp_hint_logged=set(), adapter=None, resolve_callable=None,
+                                  acceptance_runtime=types.SimpleNamespace(progress=types.SimpleNamespace(goal=None)))
+    budget = Budget(Limits(tool_calls=1))
+    with scope(budget):
+        host = await goal_checks.run(request, state)
+    assert [command for command, _ in calls.ran] == ["ls"] and len(host.runs) == 1
+    assert budget.stop_reason is None and budget.tool_calls == 1          # the hard limit never stopped it
+
+
 async def test_a_check_on_a_turn_that_cant_run_commands_is_refused_as_the_models(
         _a_mac_with_a_sandbox, monkeypatch, tmp_path):
     model, host = _Calls(monkeypatch, True), _Calls(monkeypatch, True)
@@ -501,7 +526,7 @@ async def _check_turn(_gates, monkeypatch, tmp_path, replies, run, *, outputs=()
 
     async def tools():
         return [{"key": "run_command", "description": "d"}]
-    tools = native.pop("tools", tools)
+    tools, card = native.pop("tools", tools), native.pop("confirm_command", card)
     monkeypatch.setattr(task_validation, "_disk_context", disk)
     monkeypatch.setattr(goal_checks, "_working_folder", folder)
     monkeypatch.setattr(tool_loop, "_get_adapter", Adapter)
@@ -656,6 +681,71 @@ async def test_a_budget_forced_step_runs_no_check_even_after_a_no_progress_stop(
         **({"max_tool_calls": 0} if how == "hard" else {}))
     assert calls["host"] == []
     assert record.status == ("budget_limited" if how == "hard" else "blocked")
+
+
+# -- L7-5g (L7-7 r2, T20): at the soft limit the host still runs the check: lines, within the hard limit -------------
+
+async def test_at_the_soft_limit_the_host_runs_the_check_and_a_done_goal_completes(_a_goal_job, monkeypatch, tmp_path):
+    """T20 r2/r5: the work was done when the soft limit came; the host's run, not "not run", decides."""
+    from arslan.execution_budget import Budget
+    _layout(tmp_path)
+    monkeypatch.setattr(Budget, "soft_reached", lambda self: True)
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(0, "all stages pass"))
+    assert calls["host"] == ["python3 tests/run_checks.py"]
+    assert task.phase == "succeeded" and record.status == "complete"
+
+
+async def test_at_the_soft_limit_a_failing_check_ends_budget_limited_with_its_receipt(
+        _a_goal_job, monkeypatch, tmp_path):
+    from arslan.execution_budget import Budget
+    _layout(tmp_path)
+    monkeypatch.setattr(Budget, "soft_reached", lambda self: True)
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(1, "FAILED stage 3"))
+    assert calls["host"] == ["python3 tests/run_checks.py"]             # once: no round follows
+    assert record.status == "budget_limited" and task.pause_reason == "task_budget_exhausted"
+    assert "command_not_executed" not in result["final"]
+
+
+async def test_at_the_soft_limit_a_never_list_check_is_still_never_run(_a_goal_job, monkeypatch, tmp_path):
+    """The same command gate as the model's: no bypass for the host's run at wrap-up."""
+    from arslan.execution_budget import Budget
+    _layout(tmp_path)
+    monkeypatch.setattr(Budget, "soft_reached", lambda self: True)
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(0, "pass"), command="rm -rf /")
+    assert calls["host"] == []                                          # `_never_runs`: refused before any card
+    assert record.status == "budget_limited" and task.phase != "succeeded"
+    assert "check-1: command_not_run" in result["final"]               # not run, never a failed assertion
+
+
+async def test_at_the_soft_limit_a_check_the_gate_asks_about_runs_only_on_the_cards_yes(
+        _a_goal_job, monkeypatch, tmp_path):
+    """No new auto-approve: a line the gate cards goes to the same card, and a no leaves it unrun."""
+    from arslan.execution_budget import Budget
+    _layout(tmp_path)
+    monkeypatch.setattr(Budget, "soft_reached", lambda self: True)
+    asked = []
+
+    async def no(*args, **own):
+        asked.append(args)
+        return False
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(0, "pass"),
+        command="git push origin main", confirm_command=no)
+    assert asked and calls["host"] == []
+    assert record.status == "budget_limited" and "check-1: command_not_run" in result["final"]
+
+
+async def test_with_no_hard_room_left_the_host_runs_nothing(_a_goal_job, monkeypatch, tmp_path):
+    """The hard tool limit is never what stops a host run: one that doesn't fit isn't started."""
+    from server.orchestrator import goal_checks as checks
+    _layout(tmp_path)
+    monkeypatch.setattr(checks, "_TIME_RESERVE_S", 10 ** 9)            # no wall time left for a line
+    result, task, record, calls = await _check_turn(
+        _a_goal_job, monkeypatch, tmp_path, lambda n: "Done.", lambda n: _exit(0, "pass"))
+    assert calls["host"] == [] and record.status != "complete"
 
 
 async def test_a_wrap_up_answer_after_a_no_progress_stop_runs_no_check(_a_goal_job, monkeypatch, tmp_path):

@@ -333,6 +333,10 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
         if not executed:
             return {**base, "status": "not_run", "code": "command_not_executed"}
         result = executed[-1].get("result") or {}
+        if goal and type(result.get("exit_code")) is not int:
+            # L7-5g: the host's run never started (the command gate refused it, its card was declined, or no time was
+            # left): the check is not run, never a failed assertion.
+            return {**base, "status": "not_run", "code": "command_not_run"}
         output = result.get("stdout")
         if goal and type(result.get("exit_code")) is int:     # L7-6: the goal card's receipt ("exited 1")
             base = {**base, "exit_code": result["exit_code"]}

@@ -31,6 +31,20 @@ async def _working_folder():
         return await settings_service.workspace_dir_for_run(db)
 
 
+_TIME_RESERVE_S = 30.0       # a line runs only with this much of the hard wall limit left (the command's own is less)
+
+
+def room(request) -> bool:
+    """L7-5g: one more host run fits: a tool call under the hard limit and the caller's tool cap (`max_tool_calls`),
+    and time under the hard wall limit. Each run is admitted and charged as the model's are (`_admit`), and its
+    timeout is the command's own, cut to what the budget has left (`tool_execute`); this keeps the hard limit from
+    being what stops it."""
+    from arslan.execution_budget import current
+    budget, cap = current(), getattr(request, "max_tool_calls", None)     # the budget `_admit` charges
+    return budget is None or (budget.stop_reason is None and budget.tool_calls < budget.limits.tool_calls
+            and (cap is None or budget.tool_calls < cap) and budget.remaining_seconds() > _TIME_RESERVE_S)
+
+
 async def run(request, state) -> HostChecks:
     """Verify, run, verify again, for each `check:` line; on a change nothing more runs."""
     from server.orchestrator.tool_loop import _run_tool, _tool_turn
@@ -54,6 +68,8 @@ async def run(request, state) -> HostChecks:
             return (f"({exc})",), ()
     runs, printed = [], []
     for check in lines:
+        if not room(request):                       # L7-5g: a line that doesn't fit stays not run, never half run
+            break
         changed, _ = await changes()
         if not changed:
             args = {"command": shlex.join(check.argv)}

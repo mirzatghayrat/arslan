@@ -110,14 +110,18 @@ async def finish(request: TurnRequest, state: TurnState, mode: StepMode, reply: 
         host = None
         if request.goal is not None:
             # L7-5: the host runs the goal's `check:` lines through `_run_tool`, in place, the protected set verified
-            # before and after; never on a forced step or in wrap-up, where no round follows. L7-5b: except once in a
-            # round on a step forced by a no-progress stop, so the blocked reply carries a receipt.
+            # before and after. L7-5b: once in a round on a step forced by a no-progress stop, so the blocked reply
+            # carries a receipt.
             from server.orchestrator import goal_checks
             receipt = _no_progress_receipt(state, mode)
             if receipt:
                 state.goal_receipt_round = state.goal_round
+            # L7-5g (L7-7 r2, T20): the step past the budget's soft limit (a wrap-up note, not a forced step) runs them
+            # too, so a goal whose work is done ends on the host's run, never "not run" for want of one; each line only
+            # within the hard limit and the caller's tool cap (`goal_checks.room`). Forced steps and finish mode stay
+            # as L7-5 and L7-5b have them.
             host = (goal_checks.HostChecks(accepted=getattr(acceptance_runtime.progress.goal, "accepted", ()))
-                    if not receipt and (forced or mode.finishing or state.budget.soft_reached()) else
+                    if not receipt and (forced or mode.finishing) else
                     await goal_checks.run(request, state))
         report = await task_validation.validate_output(acceptance_runtime, answer, tool_trace, model_adapter=a,
                                                        goal=request.goal, host_runs=host.runs if host else ())
