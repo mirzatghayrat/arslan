@@ -682,8 +682,8 @@ QUICK_NOTE = ("This is a quick question from the user's iPhone: answer in a few 
               "(links) when you used the web. Here you can only search the web, read a page, and look in the "
               "user's memory and earlier conversations. When they ask for something that needs the computer "
               "(a screenshot, a file, running something, acting on the Mac), say plainly that a quick ask can't do "
-              "that, and that they can start a new conversation on the phone "
-              "(「新对话」) or ask on the Mac.")  # the iPhone's own label for a new conversation
+              "that, and that they can start a new conversation from the phone's sidebar "
+              "(「新对话」, \"New conversation\" in English) or ask on the Mac.")  # the iPhone's own labels
 
 
 async def _quick_tools() -> list[dict]:

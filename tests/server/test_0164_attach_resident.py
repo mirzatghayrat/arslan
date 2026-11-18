@@ -52,7 +52,8 @@ async def test_a_quick_ask_is_told_to_hand_off_with_the_phones_label(execution_d
     await _store(execution_db, QUICK_ID, "quick")
     seen = _capture(monkeypatch)
     await arslan._handle_answer(QUICK_ID, "send me a screenshot", lambda e: None, source="phone")
-    assert HANDOFF in seen["notes"] and "「新对话」" in seen["notes"] and "ask on the Mac" in seen["notes"]
+    assert HANDOFF in seen["notes"] and "「新对话」" in seen["notes"] and '"New conversation"' in seen["notes"]
+    assert "the phone's sidebar" in seen["notes"] and "ask on the Mac" in seen["notes"]
     assert "a screenshot, a file, running something, acting on the Mac" in arslan.QUICK_NOTE
 
 
