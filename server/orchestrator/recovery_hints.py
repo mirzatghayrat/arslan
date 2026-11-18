@@ -77,6 +77,14 @@ KEPT_WRAPPED_HINT = (
     "own actions), touch a file (read, write, save, export, a file path), hand off a URL or the clipboard, "
     "delete, send or pay. Use mac_applescript if it is in your tools: its card shows the user the whole "
     "script. Otherwise tell the user what you needed.")
+# 0.1.64 pre-tag (L7-7 T1 r2): an approved script kept wrapped only because of a `--` or `#` comment
+# (`task_service.kept_for_comment`, the same check that kept it wrapped, set on the result by tool_execute). It fails
+# in the sandbox whatever the error looks like, so the hint says why and that the same script without comments runs
+# outside the sandbox once approved. The decision is unchanged; 0.1.65 may strip comments before the check instead.
+KEPT_FOR_COMMENT_HINT = (
+    "This AppleScript was approved but stayed inside the command sandbox only because it has comments (`--` or "
+    "`#`). In there it can't load Standard Additions or send Apple Events, so it fails even when it is valid. Run "
+    "the same script again without any comments: approved, it then runs outside the sandbox.")
 # STY2 r4: inside the command sandbox osascript can't load Standard Additions or an app's scripting dictionary, so a
 # valid script (`return current date`, `set now to (current date)`, an app's terms in a tell block) fails to compile
 # with -2740 or -2741, the text a real typo prints (probe of 2026-11-10, macOS 26). T1 spent about 20 calls guessing
@@ -94,6 +102,12 @@ def hint_for(tool_key: str, result: dict) -> str | None:
     if result.get("ok"):
         return None
     text = " ".join(str(result.get(k) or "") for k in ("error", "stderr", "stdout", "summary"))
+    # #1001 review L3: a compile error only in the command sandbox, as the compile hint below (the outside wrapper's
+    # Standard Additions were not measured); an Apple Events refusal in either, as the hints after it.
+    if result.get("kept_for_comment") and (
+            (result.get("sandbox") in ("workspace", "outside") and _SANDBOX_APPLE_EVENTS.search(text))
+            or (result.get("sandbox") == "workspace" and _SANDBOX_OSA_COMPILE.search(text))):
+        return KEPT_FOR_COMMENT_HINT
     if result.get("sandbox") in ("workspace", "outside") and _SANDBOX_APPLE_EVENTS.search(text):
         return KEPT_WRAPPED_HINT if result.get("kept_wrapped") else SANDBOX_APPLE_EVENTS_HINT
     if result.get("sandbox") == "workspace" and _SANDBOX_OSA_COMPILE.search(text):

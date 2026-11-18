@@ -463,27 +463,77 @@ def _runs_bare_for(app: str) -> bool:
 
 
 def unwrapped_once(command: str) -> bool:
-    from server.services.hands_service import never_touched, script_apps, script_kind
     script = _inline_osascript(command)
     if script is not None:
-        if any(never_touched(app) for app in script_apps(script)):
-            return False                     # Hands' never-list holds for scripts too, before script_kind
-        # ⓪Plan and ③Hands on the internal review: Hands' own reading decides. Only a script it calls a
-        # plain "app" script runs bare; money and delete/send words, a step past the app (a shell, other
-        # script text, raw events, AppleScriptObjC, file writes), a high-reach app (System Events,
-        # Finder, Terminal…) and a script that names no app ("opaque") stay wrapped, and go through
-        # mac_applescript's card, which shows the whole script. D4's own act-elsewhere forms stay too.
-        # ⓪Plan (U11, after the #267 review): only Reminders, Calendar, Notes and Contacts, which have no
-        # file-backed documents, and no word that saves, exports, names a file or adds an attendee. A word
-        # list can't keep up with other apps' verbs (Shortcuts Events `run shortcut`, BBEdit `run unix
-        # script`), and every app with documents can `save … in <file>`. The user can widen the list.
-        kind, apps = script_kind(script)
-        return (bool(script.strip()) and kind == "app" and not _OSA_ELSEWHERE.search(script)
-                and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script)
-                and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script))
-                and not _OSA_REMOTE.search(_OSA_STRING.sub('""', script))           # #984 review: another Mac's app
-                and not _OSA_COMMENT.search(script)
-                and all(_runs_bare_for(name) for name in _OSA_APP_LITERAL.findall(script)))
+        return _plain_osascript(script)
+    return _plain_shortcut(command)
+
+
+def kept_for_comment(command: str) -> bool:
+    """An inline osascript that `unwrapped_once` keeps wrapped only because of its `--` or `#` comments: it has a
+    comment outside its strings, and the same script with those comments removed would itself run bare. The recovery
+    hint uses it to say why (0.1.64 pre-tag, L7-7 T1 r2). It only answers that question: what runs is the command as
+    given, judged by `unwrapped_once` as before (stripping before the check is a 0.1.65 item, docs/plans).
+    #1001 review MF1: a `--` or `#` inside a string is not a comment, so `{name:"#work call"}` is not this case."""
+    script = _inline_osascript(command)
+    if script is None:
+        return False
+    stripped = _without_line_comments(script)
+    return stripped != script and _plain_osascript(stripped)
+
+
+def _without_line_comments(script: str) -> str:
+    """`script` with each `--` or `#` comment removed up to its line's end, reading strings the way AppleScript does
+    (a backslash escapes the next character inside one): a comment marker inside a string is text, and a quote inside a
+    comment pairs with nothing. `(* … *)` blocks are left as they are; `unwrapped_once` judges what is left."""
+    out, i, in_string = [], 0, False
+    while i < len(script):
+        ch = script[i]
+        if in_string:
+            out.append(ch)
+            if ch == "\\" and i + 1 < len(script):
+                out.append(script[i + 1])
+                i += 1
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+            out.append(ch)
+        elif ch == "#" or script.startswith("--", i):
+            end = script.find("\n", i)
+            i = len(script) if end < 0 else end
+            continue
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _plain_osascript(script: str) -> bool:
+    """`unwrapped_once` for an inline osascript."""
+    from server.services.hands_service import never_touched, script_apps, script_kind
+    if any(never_touched(app) for app in script_apps(script)):
+        return False                         # Hands' never-list holds for scripts too, before script_kind
+    # ⓪Plan and ③Hands on the internal review: Hands' own reading decides. Only a script it calls a
+    # plain "app" script runs bare; money and delete/send words, a step past the app (a shell, other
+    # script text, raw events, AppleScriptObjC, file writes), a high-reach app (System Events,
+    # Finder, Terminal…) and a script that names no app ("opaque") stay wrapped, and go through
+    # mac_applescript's card, which shows the whole script. D4's own act-elsewhere forms stay too.
+    # ⓪Plan (U11, after the #267 review): only Reminders, Calendar, Notes and Contacts, which have no
+    # file-backed documents, and no word that saves, exports, names a file or adds an attendee. A word
+    # list can't keep up with other apps' verbs (Shortcuts Events `run shortcut`, BBEdit `run unix
+    # script`), and every app with documents can `save … in <file>`. The user can widen the list.
+    kind, apps = script_kind(script)
+    return (bool(script.strip()) and kind == "app" and not _OSA_ELSEWHERE.search(script)
+            and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script)
+            and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script))
+            and not _OSA_REMOTE.search(_OSA_STRING.sub('""', script))           # #984 review: another Mac's app
+            and not _OSA_COMMENT.search(script)
+            and all(_runs_bare_for(name) for name in _OSA_APP_LITERAL.findall(script)))
+
+
+def _plain_shortcut(command: str) -> bool:
+    """`unwrapped_once` for a `shortcuts run` call."""
     if _shell_expands(command):
         return False
     try:

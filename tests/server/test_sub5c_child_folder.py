@@ -529,3 +529,18 @@ def test_a_name_that_isnt_plain_is_refused_before_anything_is_made(tmp_path, nam
     with pytest.raises(workspace_paths.PathEscape, match="not a sub-session folder name"):
         workspace_paths.sub_folder(tmp_path, names)
     assert os.listdir(tmp_path) == []
+
+
+@pytest.mark.parametrize("names, commander", [((), True), (("kid",), False)], ids=["commander", "sub-session"])
+async def test_a_sub_sessions_script_kept_wrapped_for_a_comment_gets_no_comment_hint(ws, names, commander):
+    """#1001 review MF2: in a sub-session even a plain script stays sandboxed, so the hint that says "drop the
+    comments and it runs outside" would be false there. The commander's approved commented script carries the flag."""
+    from server.services import permissions, personal_context as pc
+
+    async def clicked(command, argv, **kw):
+        permissions.LAST_DECISION.set(permissions.Decision(True, "user", "once"))
+        return True
+    commented = "osascript -e 'tell application \"Reminders\" to count lists -- how many'"
+    with pc.bind(_ctx(names)), permissions.asking_with(_no_card):
+        plan = await command_gate.check("run_command", {"command": commented}, _turn(clicked))
+    assert (plan.unwrapped, plan.kept_wrapped, plan.kept_for_comment) == (False, True, commander)
