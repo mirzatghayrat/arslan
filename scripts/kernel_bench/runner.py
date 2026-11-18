@@ -25,6 +25,7 @@ import contextlib
 import datetime
 import json
 import os
+import shlex
 import shutil
 import signal
 import subprocess
@@ -263,6 +264,26 @@ def entrant_version(who: str) -> str | None:
         return None
 
 
+def goal_job_reply(run: Path) -> str | None:
+    """L7-5f: the last message a background job sent (it carries a job_id) in a goal run's frames, else None.
+
+    With goal mode on, Start hands the work to a job and the turn's own text is only the host's "Goal started as a
+    background job" line; the answer is the job's message when it finishes. The driver scores that since L7-5f; this
+    reads it for runs benched before (rescore.py)."""
+    path = Path(f"{str(run).rstrip('/')}.frames.jsonl")
+    if not path.is_file():
+        return None
+    spoken = None
+    for line in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        try:
+            frame = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(frame, dict) and frame.get("type") == "message" and frame.get("job_id"):
+            spoken = frame.get("content") or ""
+    return spoken
+
+
 def reply_text(who: str, run: Path) -> str:
     out = Path(f"{run}.stdout")
     text = out.read_text(encoding="utf-8", errors="ignore") if out.exists() else ""
@@ -275,9 +296,14 @@ def reply_text(who: str, run: Path) -> str:
         return text
     if who in ARSLAN:
         try:
-            return json.loads(text.strip().splitlines()[-1]).get("final", "")
+            record = json.loads(text.strip().splitlines()[-1])
         except Exception:
             return text
+        if (record.get("goal") or {}).get("setting") == "on":
+            spoken = goal_job_reply(run)
+            if spoken is not None:
+                return spoken
+        return record.get("final", "")
     if who == "openclaw":
         try:
             data = json.loads(text[text.index("{"):])
@@ -520,6 +546,7 @@ def fresh_instance(label: str, who: str, ready_s: float = 90.0, prepare_home=Non
 
 def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: bool = False,
             models: dict | None = None) -> dict:
+    ensure_root()
     label = f"{who}-{task}-r{n}" + (f"-{ROUND}" if ROUND else "")
     run = ROOT / "runs" / label
     model = model_for(who, models or {})
@@ -610,6 +637,25 @@ def run_one(task: str, who: str, n: int, prompts: dict, sb: str, manual_login: b
     return record
 
 
+def root_problem(root: Path) -> str | None:
+    """Why BENCH_ROOT would skew the bench, else None. Arslan asks before a move into a protected folder (its command
+    policy's `protected-write`: Claude's own data, agents' `.claude/` folders, ...), and the driver declines those
+    cards, so every mv / rm in the run folders failed there (④参谋, 11-17: T5 -2 and T11 -1 in the L7 arms)."""
+    from server.services import terminal_policy
+    for path in dict.fromkeys((str(root), str(Path(root).resolve()))):   # as written and as the resolved folder
+        rules = terminal_policy.ask_rules("mv a.txt " + shlex.quote(f"{path}/runs/x/a.txt"))
+        if "protected-write" in rules:
+            return (f"BENCH_ROOT {path} is a folder Arslan protects ({', '.join(sorted(rules))}): every move there "
+                    "asks, and the driver declines it; use a folder such as ~/Documents/<repo>/bench-runs/<round>")
+    return None
+
+
+def ensure_root() -> None:
+    """Refuse a protected BENCH_ROOT on every path that runs a cell: main, rerun.py (run_one), smart_bench (run_all)."""
+    if problem := root_problem(Path(os.environ.get("BENCH_ROOT") or ROOT)):
+        raise SystemExit(problem)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tasks", required=True)
@@ -619,6 +665,7 @@ def main() -> None:
     ap.add_argument("--manual-login", action="store_true", help="T4: a person logs in once per entrant")
     ap.add_argument("--models", default="", help="per entrant, e.g. arslan=claude-sonnet-5-5,claude-code=claude-sonnet-5-5")
     args = ap.parse_args()
+    ensure_root()
     (ROOT / "tmp").mkdir(parents=True, exist_ok=True)
     prompts = json.loads((HERE / "prompts.json").read_text())
     sb = sandbox_profile()

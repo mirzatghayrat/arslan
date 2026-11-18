@@ -68,19 +68,63 @@ def _record(path: Path) -> Path:
     return path.with_name(path.name + ".groups")
 
 
-def started(key: int, group: int) -> None:
-    """A command of run `key` started process group `group`."""
+def started(key: int, group: int, command: str | None = None) -> None:
+    """A command of run `key` started process group `group`. L7-5i: the run's own record keeps when, and what it ran
+    (`<group> <start> <command, base64>` per line), for a goal's host check that has to end a leftover process first
+    and name one it can't (`leftover_processes`); per run, so a group id the system reuses for another run's command
+    never takes this one's start time (#991 max review r2)."""
+    import base64
+    import time
     path = _folders.get(key)
     if path is not None:
+        text = base64.b64encode((command or "")[:300].encode("utf-8", errors="replace")).decode("ascii")
         with open(_record(path), "a", encoding="utf-8") as out:
-            out.write(f"{group}\n")
+            out.write(f"{group} {time.time():.3f} {text}\n")
+
+
+def _records(path: Path) -> dict[int, tuple[float | None, str | None]]:
+    """Each recorded group of the run at `path`: when it started and its command (None for a line from before L7-5i,
+    which has the group alone)."""
+    import base64
+    try:
+        lines = _record(path).read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return {}
+    out: dict[int, tuple[float | None, str | None]] = {}
+    for line in lines:
+        words = line.split()
+        if not words or not words[0].isdigit():
+            continue
+        start = command = None
+        try:
+            start = float(words[1]) if len(words) > 1 else None
+            command = base64.b64decode(words[2]).decode("utf-8", errors="replace") if len(words) > 2 else None
+        except ValueError:
+            start = command = None
+        out[int(words[0])] = (start, command)
+    return out
 
 
 def _groups(path: Path) -> list[int]:
-    try:
-        return [int(word) for word in _record(path).read_text(encoding="utf-8").split() if word.isdigit()]
-    except OSError:
-        return []
+    return list(_records(path))
+
+
+def recorded(keys) -> tuple[dict[int, tuple[float | None, str | None]], list[Path]]:
+    """L7-5i: the process groups the commands of runs `keys` started, each with when it started and its command (from
+    that run's own record), and those runs' temp folders. A finished run's folder is still there while a group of it
+    is (`finish`)."""
+    base = root()
+    folders: list[Path] = []
+    for key in keys:
+        path = _folders.get(key)
+        if path is not None:
+            folders.append(path)
+        elif base.is_dir():
+            folders += [p for p in base.glob(f"run-{key}-*") if p.is_dir() and not p.is_symlink()]
+    groups: dict[int, tuple[float | None, str | None]] = {}
+    for path in folders:
+        groups.update(_records(path))
+    return groups, folders
 
 
 def _alive(group: int) -> bool:

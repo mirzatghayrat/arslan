@@ -135,6 +135,7 @@ describe("every settings field the UI can edit is mappable", () => {
       ssh_enabled: { sshEnabled: true },
       default_read_enabled: { defaultReadEnabled: true },
       folder_rules_enabled: { folderRulesEnabled: true },
+      goal_mode: { goalMode: true },
       voice_input_locale: { voiceInputLocale: "zh-CN" },
       voice_mode: { voiceMode: "conversation" },
       voice_endpoint_silence_ms: { voiceEndpointSilenceMs: 1200 },

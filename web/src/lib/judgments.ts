@@ -23,6 +23,7 @@ export const POINT_KEY: Record<string, string> = {
   "memory.applied": "activityPage.pointApplied",
   "memory.conflict": "activityPage.pointConflict",
   "job.accomplished": "activityPage.pointAccomplished",
+  "job.accomplished.noted": "activityPage.pointAccomplished",   // L7-5f: the same question, with the user's card notes
   "project.progress": "activityPage.pointProgress",
   "project.progress.item": "activityPage.pointProgressItem",
 };

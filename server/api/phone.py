@@ -415,7 +415,9 @@ async def phone_snapshot(db: AsyncSession = Depends(get_session)):
 
 def _clean_job(frame: dict) -> dict:
     """A running job's free text as `outcomes` titles have it (`phone_stats.clean_text`): a lone surrogate in a
-    goal failed the whole snapshot (#651 review)."""
+    goal failed the whole snapshot (#651 review). L7-6: a goal's `goal_state` is dropped whole: its descriptions and
+    step are free text too, and the Bridge drops the key anyway."""
+    frame.pop("goal_state", None)
     frame["goal"] = phone_stats.clean_text(frame.get("goal"))
     if frame.get("step"):
         frame["step"] = phone_stats.clean_text(frame["step"])

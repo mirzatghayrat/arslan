@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import JobCard, { JobResultLabel } from './JobCard';
+import { GoalChip, GoalDraftingChip } from './GoalCard';
 import RememberedLine from './RememberedLine';
 import CapabilityResultLine from './capabilities/CapabilityResultLine';
 import PlanProposalCard from './projects/PlanProposalCard';
@@ -628,7 +629,8 @@ export default function OrchestratorChat({
             const isSpawn = msg.sender === 'spawn';
 
             // 0.1.42: a background job's live card sits where the job was started.
-            if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} />;
+            if (msg.jobId) return <JobCard key={msg.id} jobId={msg.jobId} goalMode={settings?.goal_mode === 'true'}
+              onSend={sendMessage ? (line) => sendMessage(line) : undefined} />;
             if (msg.capabilityResult) return <CapabilityResultLine key={msg.id} result={msg.capabilityResult} />;
             if (msg.planProposal) return <PlanProposalCard key={msg.id} projectId={msg.planProposal.projectId} proposal={msg.planProposal} />;
             if (msg.sandboxCard) return <SandboxCard key={msg.id} card={msg.sandboxCard} />;
@@ -1003,6 +1005,8 @@ export default function OrchestratorChat({
               className={`composer-box${attach.dragActive ? ' composer-box--drop' : ''}`}
               {...attach.dndHandlers}
             >
+              <GoalChip />
+              <GoalDraftingChip />
               <AttachChips attachments={attachments} onRemove={attach.removeAt} />
               <ComposerInput
                 id="chat-message-input"

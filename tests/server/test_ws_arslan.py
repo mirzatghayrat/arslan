@@ -96,3 +96,31 @@ def test_to_frame_tool_call_and_tool_result():
 # --- Task 4: in-chat attach storage intent ----------------------------------
 
 
+
+
+@pytest.mark.parametrize("running", [True, False])
+def test_a_goal_card_read_before_the_history_is_not_replayed_once_its_job_runs(app_client, monkeypatch, running):
+    """L7-5b (#938 review): a goal started while the history loads must not be replayed as "not started" after its
+    live frame. The card read before the history is sent only while no job of that goal runs."""
+    import types
+
+    from server.services import approvals, background_jobs, goal_command
+    stale = {"type": "job_update", "job_id": "goal-1", "conversation_id": "goalconv", "phase": "queued",
+             "detail": "stale not-started card"}
+
+    async def open_frames(conversation_id):
+        return [stale]
+    monkeypatch.setattr(goal_command, "open_frames", open_frames)
+    if running:         # Start pressed while the history was read: the goal's job now runs and sends its own frame
+        live = {"type": "job_update", "job_id": "goal-1", "conversation_id": "goalconv", "phase": "running"}
+        monkeypatch.setitem(background_jobs._jobs, "goal-1", types.SimpleNamespace(
+            job_id="goal-1", conversation_id="goalconv", phase="running", goal_spec=object(), task=None,
+            frame=lambda: dict(live)))
+    end = {"type": "end-of-replay"}
+    monkeypatch.setattr(approvals, "pending_cards", lambda conversation_id: [end])
+    with app_client.websocket_connect("/ws/arslan/goalconv") as ws:
+        frames = []
+        while (frame := ws.receive_json()) != end:
+            frames.append(frame)
+    goal_frames = [frame for frame in frames if frame.get("job_id") == "goal-1"]
+    assert goal_frames == ([live] if running else [stale])

@@ -1,19 +1,22 @@
 import { useState } from "react";
-import { Check, Circle, Loader2, Square, X } from "lucide-react";
+import { Check, Circle, Loader2, Square, Target, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { backgroundJobsApi } from "../api/tasks";
 import type { JobCard as Job } from "../api/client.types";
 import { useArslanStore } from "../stores/arslanStore";
+import GoalCard, { type SendLine } from "./GoalCard";
 
 // A background job's live card (0.1.42). The job runs on its own; this only
 // shows the server's state: goal, the criteria Arslan drafted, the current
 // step, and — once checked — the outcome. Stop is the one control.
-export default function JobCard({ jobId }: { jobId: string }) {
+// L7-6: a goal's job is the goal card; a finished job that fell short offers "Keep going until met" with goal mode on.
+export default function JobCard({ jobId, onSend, goalMode = false }: { jobId: string; onSend?: SendLine; goalMode?: boolean }) {
   const { t } = useTranslation();
   const job = useArslanStore((s) => s.jobs[jobId]) as Job | undefined;
   const [stopError, setStopError] = useState(false);
   const [stopping, setStopping] = useState(false);
   if (!job) return null;
+  if (job.goalState) return <GoalCard job={job} onSend={onSend} />;
   const finished = job.phase === "finished";
   const tone = !finished ? "border-primary/40" : job.outcome === "done" ? "border-success/50"
     : job.outcome === "stopped" ? "border-border" : "border-warning/60";
@@ -51,6 +54,10 @@ export default function JobCard({ jobId }: { jobId: string }) {
                                  used: job.budget.used ?? "?", limit: job.budget.limit ?? "?" })
         : t(`jobs.detail.${job.detail}`, { defaultValue: t("jobs.detailGeneric", { code: job.detail }) })}
     </p>}
+    {finished && goalMode && onSend && ["partial", "blocked", "out_of_budget"].includes(job.outcome ?? "") &&
+      <div className="mt-2"><button type="button" data-testid="keep-going" onClick={() => onSend(`/goal from ${jobId}`)}
+        className="inline-flex items-center gap-1 rounded-md border border-foreground bg-foreground px-2 py-1 text-[11px] font-semibold text-background hover:opacity-90">
+        <Target size={10} aria-hidden />{t("jobs.goal.keepGoing")}</button></div>}
     {!finished && <div className="mt-2 flex items-center gap-2">
       <button type="button" onClick={() => void stop()} disabled={stopping}
         className="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-[11px] hover:bg-foreground/5 disabled:opacity-50">

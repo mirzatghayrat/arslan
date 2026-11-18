@@ -89,8 +89,35 @@ class Job:
     report: dict | None = field(default=None, repr=False)
     started_at: float = field(default_factory=time.time)
     task: asyncio.Task | None = field(default=None, repr=False)
+    # L7-3: a goal job's spec (`goal_mode.GoalSpec`); None for every other job. Only `start_goal` sets it, from the
+    # user's Start: `start_background_work`'s goal string never does.
+    goal_spec: object = field(default=None, repr=False)
+    # L7-4: the goal row's version when the user resumed it; None for a Start (and every other job).
+    goal_resume: int | None = field(default=None, repr=False)
+    # L7-6: a goal job's card state: its last verdict, that verdict's receipts, the spend and cap, its status once
+    # it ended, and a `/goal pause` waiting for the stop.
+    goal_progress: object = field(default=None, repr=False)
+    goal_items: dict = field(default_factory=dict, repr=False)
+    goal_spend: tuple = field(default=(None, None), repr=False)
+    goal_status: str | None = field(default=None, repr=False)
+    # L7-5h: a newer goal took over from this one before it ran again (its card never edits; buttons name its id).
+    goal_left: bool = field(default=False, repr=False)
+    pausing: bool = field(default=False, repr=False)
+    # L7-5f: what the user said when they declined one of this job's cards ("don't delete, move them to trash"), last
+    # USER_NOTES_MAX. The "was the goal reached" judge reads them: the user changed the goal on the way (L7-7 T11 r2).
+    user_notes: list[str] = field(default_factory=list, repr=False)
 
     def frame(self) -> dict:
+        frame = self._frame()
+        if self.goal_spec is not None:      # L7-6: only a goal's frame has the key; every other job's is unchanged
+            from server.services import goal_mode
+            frame["goal_state"] = goal_mode.goal_state(
+                self.goal_spec, self.goal_progress, status=self.goal_status or "active", items=self.goal_items,
+                finished=self.phase == "finished", spend_usd=self.goal_spend[0], cap_usd=self.goal_spend[1])
+            frame["goal_state"]["left"] = self.goal_left
+        return frame
+
+    def _frame(self) -> dict:
         return {"type": "job_update", "job_id": self.job_id, "conversation_id": self.conversation_id,
                 "goal": self.goal, "phase": self.phase, "step": self.step, "outcome": self.outcome,
                 "detail": self.detail, "budget": self.budget_stop, "run_id": self.run_id, "origin": self.origin,
@@ -101,6 +128,14 @@ class Job:
 
 
 _jobs: dict[str, Job] = {}
+USER_NOTES_MAX = 5
+
+
+def note_user_said(note: str) -> None:
+    """L7-5f: keep a declined card's note on the job this runs in (`permissions._done`); outside a job, nothing."""
+    job = _jobs.get(_inside_job.get() or "")
+    if job is not None and note.strip():
+        job.user_notes = [*job.user_notes, note.strip()[:500]][-USER_NOTES_MAX:]
 
 
 def criteria_to_acceptance(criteria: list[dict]) -> list[dict]:
@@ -190,6 +225,12 @@ def outcome_of(phase: str, results: dict, reason: str | None, *, glances: set | 
     return "blocked"
 
 
+def job_glances(job) -> set[str]:
+    """A job's checks the user confirms: its human ones and (L7-5e) a goal's checks the judge gave no verdict on."""
+    unjudged = set(job.goal_progress.unjudged) if job.goal_progress is not None else set()
+    return glances_of(job.acceptance) | unjudged
+
+
 def glances_of(acceptance) -> set[str]:
     """The ids of a job's 👀 checks: its human ones."""
     return {check.get("id") for check in acceptance or () if isinstance(check, dict) and check.get("evaluator") == "human"}
@@ -267,6 +308,39 @@ def start_placed(conversation_id: str, goal: str, criteria: list[dict], placed: 
     return job
 
 
+def start_goal(conversation_id: str, task_id: str, spec, *, origin: str = "mac", resume: int | None = None,
+               left: bool = False) -> Job:
+    """L7-3: the user pressed Start goal (or sent `/goal start`): the goal's not-started row runs as a job, its id
+    the row's, its acceptance the goal's checks. The objective is the user's own words (S64-0: False). L7-4:
+    `resume` (the row's version) re-queues a goal the user resumed: the same row, a fresh budget of its tier and cap,
+    its saved progress carried; that progress is earlier output, so the job starts as having read outside content."""
+    from server.services import goal_mode
+    job = Job(job_id=task_id, conversation_id=conversation_id, goal=_goal(spec.objective),
+              acceptance=goal_mode.acceptance(spec), origin="phone" if origin == "phone" else "mac",
+              outside_seen=resume is not None, goal_spec=spec, goal_resume=resume, goal_left=left)
+    _forget_old_finished()
+    _jobs[job.job_id] = job
+    job.task = asyncio.get_running_loop().create_task(_run(job), context=contextvars.Context())
+    _emit(job)
+    return job
+
+
+def goal_round(record, items: dict, budget) -> None:
+    """L7-6: a goal round's verdict, recorded, reaches the card of the goal job this code runs in."""
+    job = _jobs.get(_inside_job.get() or "")
+    if job is None or job.goal_spec is None:
+        return
+    job.goal_progress, job.goal_items = record, dict(items)
+    job.goal_spend = (round(budget.usd, 4) if budget.usd else None, budget.usd_cap)
+    _emit(job)
+
+
+def goal_job(task_id: str) -> Job | None:
+    """L7-3: the goal's job while it is queued or running, else None."""
+    job = _jobs.get(task_id)
+    return job if job is not None and job.goal_spec is not None and job.phase != "finished" else None
+
+
 KEEP_FINISHED = 50
 
 
@@ -320,10 +394,18 @@ async def _run(job: Job) -> None:
     if _slots is None:
         _slots = asyncio.Semaphore(MAX_CONCURRENT)
     token = _inside_job.set(job.job_id)
+    from server.services import terminal_exec
+    terminal_exec.PYCACHE_APART.set(job.goal_spec is not None)    # L7-5: this job's task only (its own context)
     final_text, phase, reason = "", "failed", "task_execution_failed"
     try:
         async with _slots:
             job.phase = "running"
+            if job.goal_spec is not None:   # L7-6: a resumed goal's card shows its round and receipts so far
+                from server.services import goal_command
+                try:
+                    job.goal_progress, job.goal_items, _ = await goal_command.saved(job.job_id)
+                except Exception as exc:  # noqa: BLE001 — the card shows round 0 until the first verdict
+                    logger.warning("goal %s progress not read: %s", job.job_id, type(exc).__name__)
             _emit(job)
             if callable(job.outside_seen):                # S64-0: ask the starting turn, now
                 job.outside_seen = bool(job.outside_seen())
@@ -340,10 +422,14 @@ async def _run(job: Job) -> None:
         _inside_job.reset(token)
         from server.registry import hands_tools
         hands_tools.forget_job(job.job_id)      # approvals never outlive their job
-        outcome = outcome_of(phase, job.results, reason, glances=glances_of(job.acceptance))
+        outcome = outcome_of(phase, job.results, reason, glances=job_glances(job))
         # Judged before the job reads as finished, so nothing shows "done" in between.
         if outcome == "done" and await _goal_not_reached(job, final_text):
             outcome, reason = "blocked", "goal_not_reached"
+        if job.goal_spec is not None:
+            phase, reason = await _goal_ended(job, phase, reason)
+            from server.services import goal_mode
+            job.goal_status = goal_mode.status_of(phase, reason)
         job.phase = "finished"
         job.outcome = outcome
         job.detail = reason
@@ -352,6 +438,8 @@ async def _run(job: Job) -> None:
             # A sub-session's result is posted in its own conversation only; its parent hears of it framed, in one
             # summary turn (SUB4).
             posted = await _report(job, final_text)
+            if job.goal_spec is not None:
+                await _goal_posted(job.job_id)
             if job.reports is None:         # SUB4: a summary's done is not the commander accepting the work
                 await _report_to_project(job)
             if job.parent_id:
@@ -364,6 +452,30 @@ async def _run(job: Job) -> None:
             # whatever the reporting raised: a job id never comes back, so the rows would only wait
             # for the next boot or the store's 24-hour prune.
             await _forget_task_grants(job)
+
+
+async def _goal_ended(job: Job, phase: str, reason: str | None) -> tuple[str, str | None]:
+    """L7-6: a goal `/goal pause` stopped waits as paused, which Resume re-queues; any other end stays as it was."""
+    if not job.pausing or phase != "cancelled":
+        return phase, reason
+    from server.services.task_repository import repository
+    try:
+        async with repository() as repo:
+            await repo.pause_goal(job.job_id)
+        return "waiting_user", "goal_paused"
+    except Exception as exc:  # noqa: BLE001 — not paused: it stays stopped, as Stop leaves it
+        logger.warning("goal %s not paused: %s", job.job_id, type(exc).__name__)
+        return phase, reason
+
+
+async def _goal_posted(task_id: str) -> None:
+    """L7-4: recorded after the post, so a quit between a goal's "complete" and its post is posted on boot."""
+    from server.services.task_repository import repository
+    try:
+        async with repository() as repo:
+            await repo.mark_goal_posted(task_id)
+    except Exception as exc:  # noqa: BLE001 — a missing mark only means the boot pass posts it again
+        logger.warning("goal %s post not recorded: %s", task_id, type(exc).__name__)
 
 
 async def _forget_task_grants(job: Job) -> None:
@@ -399,13 +511,16 @@ async def _sub_session_ended(job: Job, text: str) -> None:
 async def _goal_not_reached(job: Job, text: str) -> bool:
     """A job with no checks of its own is "done" as soon as it answers, also when the answer says
     it could not do it (seen 2026-10-04: "复制没做成" under a green check). The judge reads the goal
-    and the answer; only a confident "no" changes the word, and no answer leaves it as it was.
+    and the answer (with what the user said on the job's cards, L7-5f: then as `job.accomplished.noted`); only a
+    confident "no" changes the word, and no answer leaves it as it was.
     A job with its own checks was judged by them already."""
     if any(check.get("id") != "answer-delivered" for check in job.acceptance) or not text.strip():
         return False
     from server.services import judgment
     # The job's own run; None for a job whose run took no step, which never noted one (`_job_sink`).
-    verdict = await judgment.judge("job.accomplished", {"goal": job.goal, "answer": text},
+    point, facts = (("job.accomplished.noted", {"goal": job.goal, "answer": text, "user_notes": list(job.user_notes)})
+                    if job.user_notes else ("job.accomplished", {"goal": job.goal, "answer": text}))
+    verdict = await judgment.judge(point, facts,
                                    ref=job.job_id, conversation_id=job.conversation_id, run_id=job.run_id)
     return verdict is not None and goal_missed(verdict.answer, verdict.probability)
 
@@ -428,7 +543,7 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     from server.orchestrator import arslan, untrusted
     from arslan.execution_budget import BudgetExceeded, run_budget
     from server.db import session as db_session
-    from server.services import (approvals, host_run, permissions, personal_context, settings_service,
+    from server.services import (approvals, host_run, permissions, personal_context, settings_service, steering,
                                  sub_sessions, task_context, task_service)
     from server.services.task_repository import repository
     async with db_session.AsyncSessionLocal() as db:
@@ -455,7 +570,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
             runtime = task_service.current()
             try:
                 return await arslan.background_body(conversation_id, goal, _job_sink(job, sink), confirmations,
-                                                    **({"sub_session": True} if job.parent_id else {}))
+                                                    **({"sub_session": True} if job.parent_id else {}),
+                                                    **({"goal_spec": job.goal_spec, "steer_key": job.job_id}
+                                                       if job.goal_spec is not None else {}))
             finally:
                 if runtime is not None:                  # SUB4: what it wrote, for its report
                     job.files = list(dict.fromkeys((*job.files, *sub_sessions.files_written(runtime.trace))))
@@ -465,11 +582,17 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
     with personal_context.bind(ctx), desktop_status.working(job.conversation_id, title=job.goal, kind="job",
                                                                      job_id=job.job_id), \
             permissions.asking_with(confirmations.asker):
+        goal_row = {"_goal_row": job.job_id} if job.goal_spec is not None else {}
+        if goal_row:
+            steering.open_box(job.job_id)       # L7-3: `/goal note` steers it under its own key (K9b)
         try:
             output = await task_service.run_turn(function, job.conversation_id, job.goal,
                                                  _job_sink(job, downstream, counts_steps=False),
-                                                 _driver={"kind": "background"},
-                                                 _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap))
+                                                 _driver={"kind": "background", **({"goal": True} if goal_row else {})},
+                                                 _acceptance=job.acceptance, _budget=run_budget(tier, usd_cap=usd_cap),
+                                                 **goal_row, **({"_goal_resume": (job.goal_resume,
+                                                                                 job.goal_spec.objective)}
+                                                                if job.goal_resume is not None else {}))
         except asyncio.CancelledError:
             raise
         except Exception as exc:  # noqa: BLE001 — the task row records the failure; read it below
@@ -482,6 +605,9 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
                            else job.wall_closing if isinstance(exc, TimeoutError) else "")
             if isinstance(exc, sub_sessions.TreeLimitReached):
                 tree_stop = {**exc.stop, "tier": tier}
+        finally:
+            if goal_row:
+                steering.close_box(job.job_id)  # a note it never read goes back to the job's own queue
     async with repository() as repo:
         row = await repo.get(job.job_id)
         for result in row.results or ():
@@ -495,10 +621,51 @@ async def _execute(job: Job) -> tuple[str, str, str | None]:
         return text or "", row.phase, row.pause_reason
 
 
+_COUNTED = ("model_requests", "tool_calls", "tokens")
+_CLOCK_LAG_S = 60.0      # a wall-clock stop's saved count may lag the clock by this much (its last checkpoint)
+
+
+def _reached(budget: dict) -> dict | None:
+    """L7-5i: the limit the budget's own counts reached, a hard one always before a soft one: a counted hard limit;
+    the hard wall clock (time used within `_CLOCK_LAG_S` of it: None here, the caller's wall-clock stop); then a
+    counted soft limit, the soft dollar limit (the cap / HARD_OVER_SOFT, `Budget.soft_reached`), the soft wall time.
+    None when none was reached."""
+    from arslan.execution_budget import HARD_OVER_SOFT
+    used, hard, soft = budget.get("used") or {}, budget.get("limits") or {}, budget.get("soft_limits") or {}
+
+    def counted(limits: dict) -> dict | None:
+        for key in _COUNTED:
+            limit, count = limits.get(key), used.get(key)
+            if isinstance(limit, (int, float)) and isinstance(count, (int, float)) and count >= limit:
+                return {"reason": key, "used": count, "limit": limit}
+        return None
+    if (stop := counted(hard)) is not None:
+        return stop
+    wall, soft_wall, hard_wall = used.get("wall_seconds"), soft.get("wall_seconds"), hard.get("wall_seconds")
+    timed = all(isinstance(v, (int, float)) for v in (wall, hard_wall))
+    if timed and wall >= hard_wall - _CLOCK_LAG_S:
+        return None                     # the hard clock fired, whatever soft count came before it
+    if (stop := counted(soft)) is not None:
+        return {**stop, "soft": True}
+    spend = budget.get("spend") or {}
+    usd, cap = spend.get("usd"), spend.get("usd_cap")
+    if isinstance(usd, (int, float)) and isinstance(cap, (int, float)) and cap > 0 and usd >= cap / HARD_OVER_SOFT:
+        return {"reason": "usd", "used": f"${usd:.2f}", "limit": f"${cap / HARD_OVER_SOFT:.2f}", "soft": True}
+    if timed and isinstance(soft_wall, (int, float)) and wall >= soft_wall:
+        return {"reason": "wall_seconds", "used": round(wall), "limit": round(soft_wall), "soft": True}
+    return None
+
+
 def budget_stop_of(budget: dict, *, pause_reason: str | None, tier: str) -> dict | None:
     """What a job card says about the limit that stopped it, or None. K4a: a dollar stop shows dollars."""
     reason = budget.get("stop_reason")
     if not reason and pause_reason == "task_budget_exhausted":
+        # L7-5i (L7-7 r3, T20): a goal that wrapped up at a soft limit records no stop reason either; it said
+        # "wall_seconds 2700/2700" for a run of 335 s that stopped at 81 of 80 tool calls. Name the limit the snapshot
+        # reached, with its real count; a clock stop whose saved count lags is still the wall clock.
+        reached = _reached(budget)
+        if reached is not None:
+            return {**reached, "tier": tier}
         reason = "wall_seconds"   # asyncio.timeout ends the turn without recording a stop reason
     if not reason:
         return None
@@ -608,7 +775,10 @@ async def report_interrupted() -> int:
     try:
         return await _report_interrupted_jobs()
     finally:
-        await sub_sessions.report_restart()
+        try:
+            await _post_completed_goals()
+        finally:
+            await sub_sessions.report_restart()
 
 
 async def _report_interrupted_jobs() -> int:
@@ -623,8 +793,10 @@ async def _report_interrupted_jobs() -> int:
     async with db_session.AsyncSessionLocal() as db:
         rows = (await db.execute(select(CompanionTask).where(
             CompanionTask.phase == "waiting_user", CompanionTask.pause_reason == "process_interrupted"))).scalars().all()
+        # L7-4: never a goal row: it stays interrupted, nothing cancels it, and the user resumes it (Q5).
         targets = [(row.id, row.owner_id, row.conversation_id) for row in rows
-                   if ((row.privacy or {}).get("driver") or {}).get("kind") == "background"]
+                   if ((row.privacy or {}).get("driver") or {}).get("kind") == "background"
+                   and (row.privacy or {}).get("driver", {}).get("goal") is not True]
     if not targets:
         return 0
     locale = await runtime_messages.selected_locale()
@@ -643,6 +815,37 @@ async def _report_interrupted_jobs() -> int:
         desktop_status.push("turn_finished", conversation_id=conversation_id, outcome="needs_review", title=goal,
                             summary=note, work="job")
     return len(targets)
+
+
+async def _post_completed_goals() -> int:
+    """L7-4, boot: a goal that succeeded but whose result this attempt never posted (a quit in between) is posted
+    now, once: its last answer, or a host line, with its acceptance sheet, from the row and never the transcript."""
+    from sqlalchemy import select
+    from server.db import session as db_session
+    from server.db.models import CompanionTask, Run, TaskAttempt
+    from server.services import goal_mode, runtime_messages, task_validation
+    from server.services.task_repository import repository
+    async with db_session.AsyncSessionLocal() as db:
+        rows = [row for row in (await db.scalars(select(CompanionTask).where(CompanionTask.phase == "succeeded"))).all()
+                if (row.privacy or {}).get("driver") == {"kind": "background", "goal": True}
+                and row.privacy.get("goal_posted") != row.attempt_id]
+    for row in rows:
+        try:
+            spec = goal_mode.GoalSpec.model_validate(row.privacy["goal_spec"])
+            job = Job(job_id=row.id, conversation_id=row.conversation_id, goal=_goal(spec.objective),
+                      acceptance=goal_mode.acceptance(spec), phase="finished", outcome="done", goal_spec=spec,
+                      results={item.get("check_id"): item.get("status") for item in row.results or ()})
+            async with repository() as repo:
+                job.report = await task_validation.latest_report(repo, row)
+                attempt = await repo.db.get(TaskAttempt, row.attempt_id)
+                text = await repo.db.scalar(select(Run.final_output).where(
+                    Run.id.in_(attempt.run_ids if attempt else []), Run.kind != "worker").order_by(Run.id.desc()))
+            await _report(job, text or runtime_messages.render(
+                "goal_complete", await runtime_messages.selected_locale(), objective=spec.objective[:200]))
+            await _goal_posted(row.id)
+        except Exception as exc:  # noqa: BLE001 — one goal's post never keeps the others or the boot back
+            logger.warning("goal %s result not posted on boot: %s", row.id, type(exc).__name__)
+    return len(rows)
 
 
 def _reset_for_tests() -> None:

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 from datetime import timezone
@@ -17,6 +18,16 @@ from server.db.models import TaskAttempt, TaskEvent
 from server.services import artifact_validation
 from server.services.task_repository import TaskError, repository
 
+logger = logging.getLogger(__name__)
+# L7-5e: a goal judgement check the judge gave no verdict on, by why: it said it can't judge (null), the request failed
+# or ran out of time, or the reply held no verdict. The check stays `not_run`; the goal round ends on these
+# (`turn_answer._goal_round`) as the user's to confirm, never as rounds of retried work.
+# L7-5i (L7-7 r3, T20): a target that is there but isn't one file the judge can read (a folder the work created after
+# Start, so it wasn't flagged then) is no verdict too: it failed every round, and the goal ran into the soft tool limit.
+# A target that isn't there yet stays `judged_file_unreadable`, failed: the work can still write it.
+NO_VERDICT = frozenset({"model_check_unjudgeable", "model_check_error", "model_check_timeout",
+                        "model_check_unparsed", "judged_not_a_file"})
+_GOAL_JUDGE_TIMEOUT_S = 180.0    # L7-7 bench: DeepSeek's verdicts took 20-97 s
 _ARTIFACT = re.compile(r"^/api/v1/runs/([1-9][0-9]*)/artifacts/([^/]+)$")
 _LINK = re.compile(r"\]\(<?(/api/v1/runs/[1-9][0-9]*/artifacts/[^\n<>]+?)>?\)")
 _BARE = re.compile(r"/api/v1/runs/[1-9][0-9]*/artifacts/[^\s<>\"'\])]+")
@@ -103,14 +114,15 @@ def _changed_files(folder: Path, since: float | None) -> int:
     return count
 
 
-def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, str, str | None]:
+def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, str, str | None, int | None]:
     """Read-only: only inside the readable folders (file_reader.resolve refuses the rest, hidden and
     credential-shaped names included), so this can tell no more than list_dir already could. INB9-a: a pass
-    also names the file or folder it found, which the acceptance sheet shows as its evidence."""
+    also names the file or folder it found, which the acceptance sheet shows as its evidence. The count: a folder's
+    qualifying files when it falls short (L7 goal mode's measure), else None."""
     from server.services import file_reader
     from server.services.file_reader import NotReadable
     if not rule.target:
-        return "not_run", "file_target_unresolved", None
+        return "not_run", "file_target_unresolved", None, None
     named, guesses = _target_candidates(rule.target, trace, context)
     roots = list(context.get("roots") or [])
     readable, missing = [], False
@@ -123,19 +135,93 @@ def _file_saved_on_disk(rule, trace: list[dict], context: dict) -> tuple[str, st
         if path not in readable:
             readable.append(path)
     if not readable:
-        return ("failed", "file_missing", None) if missing else ("not_run", "file_target_unresolved", None)
-    since, minimum = context.get("since"), max(1, rule.minimum or 1)
+        return ("failed", "file_missing", None, None) if missing else ("not_run", "file_target_unresolved", None, None)
+    since, minimum, count = context.get("since"), max(1, rule.minimum or 1), None
     for path in readable:
         try:
             if path.is_file():
                 stat = path.stat()
                 if stat.st_size > 0 and _changed_since(stat, since):
-                    return "passed", "file_saved_assertion", str(path)
-            elif path.is_dir() and _changed_files(path, since) >= minimum:
-                return "passed", "file_saved_assertion", str(path)
+                    return "passed", "file_saved_assertion", str(path), None
+            elif path.is_dir():
+                changed = _changed_files(path, since)
+                if changed >= minimum:
+                    return "passed", "file_saved_assertion", str(path), None
+                count = max(count or 0, changed)
         except OSError:
             continue
-    return "failed", "file_unchanged", None
+    return "failed", "file_unchanged", None, count
+
+
+def _read_named(target: str, trace: list[dict], context: dict) -> str | None:
+    """L7: a named file's text as the host reads it, inside the readable folders only; None when it can't."""
+    from server.services import file_reader
+    named, guesses = _target_candidates(target, trace, context)
+    for candidate in dict.fromkeys([*named, *guesses]):
+        try:
+            _path, data = file_reader.read_bytes(str(candidate), list(context.get("roots") or []))
+        except (file_reader.NotReadable, OSError):
+            continue
+        return data.decode("utf-8", errors="replace")
+    return None
+
+
+def _not_a_file(target: str, trace: list[dict], context: dict) -> bool:
+    """L7-5i: the judge's target is there but isn't a file it reads (a folder): no work makes it one, so it is no
+    verdict (`judged_not_a_file`), never a failure that sends the goal into another round."""
+    named, guesses = _target_candidates(target, trace, context)
+    for path in dict.fromkeys([*named, *guesses]):
+        try:
+            if path.exists() and not path.is_file():
+                return True
+        except OSError:         # #993 review r1: a folder the user can't search: it stays failed, as before
+            continue
+    return False
+
+
+def _strict_json(reply: str):
+    try:
+        return json.loads(reply or "null")
+    except (ValueError, RecursionError):
+        return None
+
+
+def _goal_json(reply: str):
+    """L7-5e (#975 review): the reply as pure JSON or one fenced JSON block, else None. Not `parse_json_object`'s
+    first-{-to-last-} rescue: prose quoting a file's planted `{"passed": true}` would count as the verdict."""
+    text = (reply or "").strip()
+    fenced = re.fullmatch(r"```(?:json)?[ \t]*\n?(.*?)\n?[ \t]*```", text, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        text = fenced[1].strip()        # a second fence inside is not JSON: refused below
+    decision = _strict_json(text)
+    return decision if isinstance(decision, dict) else None
+
+
+def _other_named(named: dict, own: str, room: int, trace: list[dict], context: dict) -> str:
+    """L7-5e: the goal's other named files for its judge, each labelled by its path, in the room left of the same
+    20,000 characters. A criterion that compares its file with another (T17: the answer with the prices it sums, in
+    the L7-7 bench) got only its own file, and the judge could never say.
+
+    Bounds (⓪Plan, 11-16): only the paths the goal's own checks name, files only (never a folder, its listing or
+    anything under it); each read as the named file is (`_read_named`: the readable folders, hidden and secret names
+    refused); one the host refuses is labelled not readable, never read another way; all inside the untrusted-data
+    markers, so a file's text is data the judge assesses, never its verdict."""
+    from server.orchestrator.untrusted import wrap_external
+    out = ""
+    for path in dict.fromkeys(path for path in named.values() if path and path != own):
+        if room <= 0:
+            break
+        content = _read_named(path, trace, context)       # a folder is refused there: not a file
+        piece = (path + "\n" + (content if content is not None else "(not readable)"))[:room]
+        out += "\nAnother file the goal names (its path on the first line):\n" + wrap_external(piece)
+        room -= len(piece)
+    return out
+
+
+def _measure(value, size: int | None = None) -> dict:
+    """L7: a goal check's measure as the seen set keeps it: a digest of its own condition's value, and a size for
+    the counts and sets (progress there must grow)."""
+    return {"digest": hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest(), "size": size}
 
 
 def _names_artifact(item: dict, target: str | None) -> bool:
@@ -164,8 +250,12 @@ def _sources_read(trace: list[dict]) -> set[str]:
 
 def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context: dict | None = None) -> dict:
     """A composable, side-effect-free check over admitted evidence only. `context` (roots, since,
-    workspace) is what a file_saved check may look at on disk; without it nothing is looked at."""
+    workspace) is what a file_saved check may look at on disk; without it nothing is looked at.
+    L7: in a goal (`context["goal"]`) the reply never meets a check (no `text` rule but `answer-delivered`), a
+    `check:` line reads only the host's own runs (`host_runs`, L7-5), and each check also reports its measure."""
     base = {"check_id": check.id, "evaluator": check.evaluator}
+    context = context or {}
+    goal, measure = bool(context.get("goal")), None
     if check.evaluator != "deterministic":
         return {**base, "status": "not_run", "code": "human_review_required" if check.evaluator == "human" else "model_check_not_run"}
     rule = check.rule
@@ -174,6 +264,8 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
     if rule.when == "artifacts_present" and not artifacts and not check.critical:
         return {**base, "status": "not_applicable", "code": "no_artifact_subject"}
     passed = False
+    if rule.kind == "text" and goal and check.id != "answer-delivered":
+        return {**base, "status": "failed", "code": "goal_text_rule_refused"}
     if rule.kind == "text":
         passed = bool(text.strip())
         if rule.equals is not None:
@@ -211,8 +303,14 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
                 return {**base, "status": "not_run", "code": "artifact_check_not_run"}
             passed = all(item["status"] == "passed" for item in selected)
         else:
-            status, code, found = _file_saved_on_disk(rule, trace, context or {})
-            return {**base, "status": status, "code": code, **({"path": found} if found else {})}
+            status, code, found, count = _file_saved_on_disk(rule, trace, context)
+            return {**base, "status": status, "code": code, **({"path": found} if found else {}),
+                    **({"measure": _measure(count, count)} if goal and count is not None else {})}
+    elif rule.kind == "file_contains":
+        content = _read_named(rule.target or "", trace, context)
+        found = [phrase for phrase in rule.contains if content is not None and phrase in content]
+        passed = content is not None and len(found) == len(rule.contains)
+        measure = _measure(found, len(found))
     elif rule.kind == "sources_read":
         sources = _sources_read(trace)
         passed = len(sources) >= (rule.minimum if rule.minimum is not None else 1)
@@ -221,6 +319,9 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
         if rule.target:
             needle = rule.target.casefold()
             passed = passed and any(needle in source.casefold() for source in sources)
+        if goal:
+            counted = sorted(s for s in sources if not rule.target or rule.target.casefold() in s.casefold())
+            measure = _measure(counted, len(counted))
     elif rule.kind == "research_sources":
         from arslan.companion.research import admitted_sources
         opened = {source.url for source, _ in admitted_sources(trace).values()}
@@ -240,14 +341,24 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
     elif rule.kind in {"code_build", "code_test"}:
         if rule.target is None or rule.argv is None:
             return {**base, "status": "not_run", "code": "command_contract_required"}
-        executed = [item for item in trace if item.get("tool") == "run_command"
+        # L7: a goal's `check:` line is met only by the host's own run, never by the worker's run_command.
+        executed = [item for item in ((context.get("host_runs") or []) if goal else trace)
+            if item.get("tool") == "run_command"
             and item.get("args", {}).get("command") == rule.target
             and item.get("args", {}).get("argv") == list(rule.argv)]
         if not executed:
             return {**base, "status": "not_run", "code": "command_not_executed"}
         result = executed[-1].get("result") or {}
+        if goal and type(result.get("exit_code")) is not int:
+            # L7-5g: the host's run never started (the command gate refused it, its card was declined, or no time was
+            # left): the check is not run, never a failed assertion.
+            return {**base, "status": "not_run", "code": "command_not_run"}
         output = result.get("stdout")
+        if goal and type(result.get("exit_code")) is int:     # L7-6: the goal card's receipt ("exited 1")
+            base = {**base, "exit_code": result["exit_code"]}
         passed = result.get("ok") is True and type(result.get("exit_code")) is int and result["exit_code"] == 0
+        measure = _measure([result.get("exit_code"), hashlib.sha256(
+            (str(output or "") + str(result.get("stderr") or "")).encode()).hexdigest()])
         if rule.equals is not None or rule.contains:
             passed = passed and isinstance(output, str) and all(value in output for value in rule.contains)
             if rule.equals is not None:
@@ -256,11 +367,15 @@ def evaluate(check, text: str, artifacts: list[dict], trace: list[dict], context
         # No guessed language classifier, screenshot judge, shell execution, or
         # fake ASC readback. These require an explicitly wired evaluator/receipt.
         return {**base, "status": "not_run", "code": f"{rule.kind}_validator_unavailable"}
-    return {**base, "status": "passed" if passed else "failed", "code": f"{rule.kind}_assertion"}
+    return {**base, "status": "passed" if passed else "failed", "code": f"{rule.kind}_assertion",
+            **({"measure": measure} if goal and measure is not None else {})}
 
 
-async def validate_output(runtime, text: str, trace: list[dict], *, model_adapter=None) -> dict:
-    """Record one immutable report before a final answer is revealed."""
+async def validate_output(runtime, text: str, trace: list[dict], *, model_adapter=None, goal=None,
+                          host_runs=()) -> dict:
+    """Record one immutable report before a final answer is revealed. `goal` (L7, a GoalSpec): the checks are
+    the goal's, read as `evaluate` says, and the judge reads each judgement check's named file, never `text`.
+    `host_runs` (L7-5): the host's own runs of the goal's `check:` lines this verdict, the only ones they read."""
     # 0.1.59: the task's own record of its tool calls, when the caller has no trace (the
     # finish-time re-check passed [] and so never saw a file read or a command).
     trace = trace or list(getattr(runtime, "trace", ()))
@@ -272,8 +387,10 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                 TaskAttempt.spec_revision == task.spec_revision))).all()
             owned_runs = {run_id for attempt in attempts for run_id in attempt.run_ids}
     started = [attempt.started_at for attempt in attempts if attempt.started_at is not None]
-    context = await _disk_context(min(started) if started else None) if any(
+    context = await _disk_context(min(started) if started else None) if goal is not None or any(
         check.rule is not None and check.rule.kind == "file_saved" for check in spec.acceptance) else {}
+    if goal is not None:
+        context["goal"], context["host_runs"] = True, list(host_runs)
     references = {ref.locator: {"expected_hash": ref.sha256, "title": ref.title, "logical_key": ref.logical_key}
                   for ref in runtime.progress.artifacts if ref.locator}
     explicit = set()
@@ -312,14 +429,29 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
             if artifacts.index(replacement) > artifacts.index(artifact):
                 artifact.update(status="not_applicable", code="artifact_superseded", superseded_by=replacement["id"])
     checks = [evaluate(check, text, artifacts, trace, context) for check in spec.acceptance]
-    if model_adapter is not None and not any(item["status"] == "failed" for item in [*checks, *artifacts]):
+    # L7: a goal's judgement checks are judged every round, a deterministic failure or not, so each can be met.
+    if model_adapter is not None and (goal is not None or not any(
+            item["status"] == "failed" for item in [*checks, *artifacts])):
         from server.orchestrator.answer_salvage import _chat_retry
         from server.orchestrator.untrusted import wrap_external
+        named = {item.id: item.path for item in goal.checks} if goal is not None else {}
         for index, check in enumerate(spec.acceptance):
             if check.evaluator != "model":
                 continue
             if check.rule is not None and check.rule.kind == "layout":
                 continue  # No screenshot bytes were supplied to this text-only assessor.
+            if goal is None:
+                subject = "\nOutput:\n" + wrap_external(text[:100_000])
+            else:
+                # L7: the named file as the host reads it, at most 20,000 characters; never the answer.
+                content = _read_named(named[check.id], trace, context) if named.get(check.id) else None
+                if content is None:
+                    there = _not_a_file(named[check.id], trace, context) if named.get(check.id) else False
+                    checks[index] = {**checks[index], "status": "not_run" if there else "failed",
+                                     "code": "judged_not_a_file" if there else "judged_file_unreadable"}
+                    continue
+                subject = "\nContent of the named file:\n" + wrap_external(content[:20_000]) + _other_named(
+                    named, named[check.id], 20_000 - len(content[:20_000]), trace, context)
             # This same admitted adapter/budget has no tools. Its judgment is
             # explicitly non-critical and cannot alter deterministic evidence.
             try:
@@ -329,20 +461,30 @@ async def validate_output(runtime, text: str, trace: list[dict], *, model_adapte
                     "Return only JSON with passed (boolean). If unable to judge, return null.",
                     "Criterion: " + check.description +
                     (f"\nRequested language: {check.rule.locale}" if check.rule is not None and check.rule.locale else "") +
-                    "\nOutput:\n" + wrap_external(text[:100_000]), tools=None)
+                    subject, tools=None, **({"timeout": _GOAL_JUDGE_TIMEOUT_S} if goal is not None else {}))
             except (BudgetExceeded, TaskError):
                 raise
-            except Exception:  # noqa: BLE001 — an unavailable assessment is not a passing vote
+            except Exception as exc:  # noqa: BLE001 — an unavailable assessment is not a passing vote
+                if goal is not None:     # L7-5e: in a goal, said why (the round ends on it), never silently
+                    code = "model_check_timeout" if isinstance(exc, TimeoutError) else "model_check_error"
+                    checks[index] = {**checks[index], "code": code}
+                    logger.warning("goal judge %s: no verdict (%s, %s)", check.id, code, type(exc).__name__)
                 continue
-            if getattr(response, "tool_calls", None):
-                continue
-            try:
-                decision = json.loads(response.content or "null")
-            except (ValueError, RecursionError):
-                continue
+            reply = "" if getattr(response, "tool_calls", None) else (response.content or "")
+            # L7-5e: a goal's judge reply may be one fenced JSON block, never prose around JSON (which could quote
+            # a verdict planted in a file); a job's stays strict, as it was.
+            decision = _goal_json(reply) if goal is not None else _strict_json(reply)
             if isinstance(decision, dict) and type(decision.get("passed")) is bool:
                 checks[index] = {"check_id": check.id, "evaluator": "model",
                     "status": "passed" if decision["passed"] else "failed", "code": "model_assessment"}
+            elif goal is not None:
+                # L7-5e: null is the judge saying it can't judge from what it was shown; anything else held no verdict.
+                code = "model_check_unjudgeable" if reply.strip() == "null" or (
+                    isinstance(decision, dict) and "passed" in decision and decision["passed"] is None) \
+                    else "model_check_unparsed"
+                checks[index] = {**checks[index], "code": code}
+            if goal is not None:         # L7-5e: the reply's length and how it parsed, never its text
+                logger.warning("goal judge %s: reply %d chars, %s", check.id, len(reply), checks[index]["code"])
     report = {"spec_revision": spec.revision, "attempt_id": runtime.attempt_id,
               "output_sha256": hashlib.sha256(text.encode()).hexdigest(), "checks": checks, "artifacts": artifacts}
     async with runtime.lock:

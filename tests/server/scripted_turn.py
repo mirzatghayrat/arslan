@@ -257,7 +257,7 @@ def _runtime(turn, acceptance):
     async def checkpoint(reason):
         turn.checkpoints.append((reason, list(runtime.progress.loop_fingerprints)))
 
-    async def execute_tool(_key, args, execute):
+    async def execute_tool(_key, args, execute, **_own):     # L7-5: host_check
         return await execute(args)
     runtime.checkpoint, runtime.execute_tool = checkpoint, execute_tool
     return runtime

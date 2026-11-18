@@ -3,6 +3,7 @@ driver, per-task repeats and the completion bar in the report. No model calls: e
 hand-written stand-in, independently of the fixture's own code, and the staged checks are run for real."""
 
 import asyncio
+import datetime as dt
 import csv
 import io
 import json
@@ -123,7 +124,8 @@ def test_t18_a_right_ledger_scores_three_and_the_reply_plays_no_part(tmp_path):
     assert "reply" not in check_t18.check.__code__.co_varnames
 
 
-@pytest.mark.parametrize("damage", ["order", "status", "total_row", "cents", "missing_row"])
+@pytest.mark.parametrize("damage", ["order", "status", "total_row", "cents", "missing_row", "extra_cell",
+                                    "extra_cell_total"])
 def test_t18_one_wrong_thing_in_the_ledger_is_not_complete(tmp_path, damage):
     params = check_t18.fixture(str(tmp_path))
     rows = _t18_ledger(tmp_path)
@@ -136,11 +138,24 @@ def test_t18_one_wrong_thing_in_the_ledger_is_not_complete(tmp_path, damage):
         rows = rows[:-1]
     elif damage == "cents":
         rows[3][3] = f"{Decimal(rows[3][3]) + Decimal('0.01'):.2f}"
+    elif damage == "extra_cell":
+        rows[3] = [*rows[3], "x"]                    # a row longer than the header: csv puts the rest under None
+    elif damage == "extra_cell_total":
+        # L7-7 ON rerun, T18 r1: the TOTAL row had 7 cells, its sum under stated_total; the checker crashed the arm
+        rows[-1] = ["TOTAL", "", "", "", rows[-1][3], "", ""]
     else:
         del rows[5]
     _write_csv(tmp_path / "ledger.csv", rows)
     verdict = check_t18.check(str(tmp_path), params)
     assert verdict["score"] == 1, (damage, verdict)
+
+
+def test_t18_a_trailing_empty_cell_costs_nothing(tmp_path):
+    params = check_t18.fixture(str(tmp_path))
+    rows = _t18_ledger(tmp_path)
+    rows[3] = [*rows[3], ""]                         # "…,ok," : one empty cell past the header
+    _write_csv(tmp_path / "ledger.csv", rows)
+    assert check_t18.check(str(tmp_path), params)["score"] == 3
 
 
 def test_t18_no_ledger_or_a_changed_invoice_scores_zero(tmp_path):
@@ -899,6 +914,23 @@ def test_start_waits_for_the_goals_job_even_after_its_host_line_ended():
     assert not t.goal_turn_over(500.0) and not t.finished(500.0, 0.0)
 
 
+def test_a_not_started_goal_job_does_not_hold_the_goal_turn_open():
+    """L7-6 (a): the `/goal <prompt>` turn emits a queued job_update with goal_state not_started that only Start
+    moves on. It must end the drafting turn, or the run idles to its timeout and Start is never sent."""
+    queued = {"type": "job_update", "job_id": "j", "phase": "queued", "goal_state": {"status": "not_started"}}
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0, goal_quiet_s=60)
+    t.start_turn(0.0, goal_turn=True)
+    t.on_frame(queued, 1.0)
+    t.on_frame({"type": "stream_end"}, 2.0)
+    assert "j" not in t.jobs_open and t.finished(3.0, 0.0)
+    # Start: the same job, now running, is awaited until it finishes
+    t.start_turn(4.0, goal_turn=True, expect_job=True)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "running", "goal_state": {"status": "active"}}, 5.0)
+    assert not t.finished(100.0, 0.0)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"}, 101.0)
+    assert t.finished(102.0, 0.0)
+
+
 def test_each_turn_of_a_multi_turn_task_is_sent_as_its_own_goal_and_snapshotted_after_it(tmp_path):
     run_dir = tmp_path / "arslan-T8-r1"
     run_dir.mkdir()
@@ -1035,3 +1067,126 @@ def test_goal_task_helpers_round_trip_and_find_python3(tmp_path):
     assert goal_tasks.decode(goal_tasks.encode(data)) == data
     assert Path(PY).name.startswith("python3")
     shutil.which(PY)
+
+
+# -- L7-5f: a goal's answer is its job's last message, not the host's "Goal started" line ---------------------------
+
+START_LINE = "Goal started as a background job: find the first cause"
+JOB_ANSWER = "第一个原因在第 2486 行：connection refused by replica-2 (ECONNREFUSED)"
+
+
+def test_a_goal_start_turn_answers_with_its_jobs_message_not_the_host_line():
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0, goal_quiet_s=60)
+    t.start_turn(0.0, goal_turn=True, expect_job=True)
+    t.on_frame({"type": "stream_chunk", "content": START_LINE}, 1.0)
+    t.on_frame({"type": "stream_end"}, 1.5)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "running"}, 2.0)
+    t.on_frame({"type": "job_update", "job_id": "j", "phase": "finished", "outcome": "done"}, 50.0)
+    t.on_frame({"type": "message", "job_id": "j", "role": "assistant", "content": JOB_ANSWER}, 50.1)
+    assert t.finished(51.0, 0.0)
+    assert t.next_turn(51.0) == JOB_ANSWER
+    # the next turn starts clean: a later goal turn with no job message answers with its own text
+    t.start_turn(52.0, goal_turn=True)
+    t.on_frame({"type": "stream_chunk", "content": "Goal set, not started"}, 53.0)
+    t.on_frame({"type": "message", "content": "a host note, no job"}, 53.5)       # only a job's message answers
+    assert t.next_turn(54.0) == "Goal set, not started"
+
+
+def test_a_plain_turn_keeps_its_streamed_answer_even_when_a_job_speaks():
+    t = arslan_driver.TurnTracker("/run", idle_after_s=0)
+    t.start_turn(0.0)
+    t.on_frame({"type": "stream_chunk", "content": "answer"}, 1.0)
+    t.on_frame({"type": "message", "job_id": "j", "content": "a job's message"}, 2.0)
+    assert t.next_turn(3.0) == "answer"
+
+
+def _goal_record(run: Path, goal: dict | None, frames: list[dict] | None) -> None:
+    record = {"end": "done", "final": START_LINE, **({"goal": goal} if goal is not None else {})}
+    Path(f"{run}.stdout").write_text("progress line\n" + json.dumps(record, ensure_ascii=False) + "\n")
+    if frames is not None:
+        Path(f"{run}.frames.jsonl").write_text("".join(json.dumps(f, ensure_ascii=False) + "\n" for f in frames))
+
+
+def test_reply_text_of_a_goal_run_already_benched_is_its_jobs_last_message(tmp_path):
+    run = tmp_path / "arslan-T10-r1"
+    run.mkdir()
+    frames = [{"type": "stream_chunk", "content": START_LINE},
+              {"type": "message", "job_id": "j", "content": "an earlier job's message"},
+              {"type": "message", "content": "a host note with no job"},
+              {"type": "message", "job_id": "j2", "content": JOB_ANSWER}]
+    _goal_record(run, {"setting": "on", "status": "review"}, frames)
+    assert runner.reply_text("arslan", run) == JOB_ANSWER
+    # goal mode off (or main's /goal as plain text): the driver's final stands
+    _goal_record(run, {"setting": "absent"}, frames)
+    assert runner.reply_text("arslan", run) == START_LINE
+    _goal_record(run, None, frames)
+    assert runner.reply_text("arslan", run) == START_LINE
+    # goal on but the job never spoke (or no frames file): the final stands
+    _goal_record(run, {"setting": "on"}, [{"type": "message", "content": "host only"}])
+    assert runner.reply_text("arslan", run) == START_LINE
+    Path(f"{run}.frames.jsonl").unlink()
+    assert runner.reply_text("arslan", run) == START_LINE
+
+
+def test_rescore_scores_t10_from_the_jobs_answer_and_the_recorded_cause_line(tmp_path):
+    from scripts.kernel_bench import rescore
+    run = tmp_path / "arslan-T10-r1"
+    run.mkdir()
+    _goal_record(run, {"setting": "on"}, [{"type": "message", "job_id": "j", "content": JOB_ANSWER}])
+    before = {"score": 0, "line_ok": False, "cause_ok": False, "cause_line": 2486}
+    record = {"task": "T10", "entrant": "arslan", "end": "done", "check": before,
+              "artifacts": {"folder": str(run)}, "passed": False}
+    after = rescore.rescore_one(record)
+    assert after["check"]["score"] == 3 and after["check"]["cause_line"] == 2486
+    assert after["passed"] is True and after["check_before"] == before
+    wrong = rescore.rescore_one({**record, "check": {**before, "cause_line": 3100}})
+    assert wrong["check"]["score"] == 1 and wrong["passed"] is False      # the line must still match
+
+
+# -- the plain-mode drop (④参谋, 11-17): a protected bench root, and T1's "next Monday" said on a Sunday -------------
+
+@pytest.mark.parametrize("root", ["/Users/someone/Library/Application Support/Claude/notes/l7-bench",
+                                  "/Users/someone/.claude/bench"])
+def test_a_bench_root_where_arslan_asks_before_every_move_is_refused(root):
+    problem = runner.root_problem(Path(root))
+    assert problem and "protected-write" in problem
+
+
+@pytest.mark.parametrize("root", ["/Users/someone/Documents/aralem_dev/Arslan/bench-runs/l7-r2", "/tmp/arslan-kernel-bench"])
+def test_an_ordinary_bench_root_is_fine(root):
+    assert runner.root_problem(Path(root)) is None
+
+
+def test_a_root_with_a_quote_in_its_name_is_still_judged():
+    assert "protected-write" in runner.root_problem(Path("/Users/someone/Library/Application Support/Claude/it's"))
+
+
+def test_a_root_that_resolves_into_a_protected_folder_is_refused(monkeypatch):
+    real = Path.resolve
+    hidden = Path("/Users/someone/Library/Application Support/Claude/bench")
+    monkeypatch.setattr(Path, "resolve", lambda self, *a, **k: hidden if self.name == "bench-link" else real(self))
+    assert "protected-write" in runner.root_problem(Path("/Users/someone/Documents/bench-link"))
+    assert runner.root_problem(Path("/Users/someone/Documents/bench-runs")) is None
+
+
+@pytest.mark.parametrize("entry", ["rerun", "smart_bench"])
+def test_every_path_that_runs_a_cell_refuses_a_protected_root(monkeypatch, entry):
+    from scripts.kernel_bench import rerun, smart_bench
+    monkeypatch.setenv("BENCH_ROOT", "/Users/someone/Library/Application Support/Claude/bench")
+    monkeypatch.setattr(runner, "sandbox_profile", lambda: "")
+    monkeypatch.setattr(runner, "ROUND", "r")
+    with pytest.raises(SystemExit, match="protected-write"):
+        if entry == "rerun":
+            rerun.main(["T9:arslan:1"])
+        else:
+            smart_bench.run_all("openclaw", "l", None, Path("/nonexistent"), "m")
+
+
+def test_t1_next_monday_said_on_a_sunday_accepts_both_mondays():
+    from scripts.kernel_bench import check_t1
+    sunday = check_t1.expected_dates(dt.date(2026, 11, 15))
+    assert sunday["landlord"] == {dt.date(2026, 11, 16), dt.date(2026, 11, 23)}
+    monday = check_t1.expected_dates(dt.date(2026, 11, 16))
+    assert monday["landlord"] == {dt.date(2026, 11, 23)}                 # any other day: the Monday of next week
+    saturday = check_t1.expected_dates(dt.date(2026, 11, 14))
+    assert saturday["landlord"] == {dt.date(2026, 11, 16)}

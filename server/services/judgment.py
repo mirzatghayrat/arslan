@@ -98,6 +98,17 @@ REGISTRY: dict[str, DecisionPoint] = {p.name: p for p in (
                   "Does the assistant's final answer say the task's goal was achieved, rather than that it "
                   "was blocked, refused, expired, is waiting on the user, or was only partly done?",
                   ("goal", "answer"), "active", 0.7, after_turn=True),
+    # L7-5f (L7-7 T11 r2): the same question for a job the user steered on its cards ("don't delete, move them to
+    # trash" made "moved, not deleted" the goal). Asked instead of job.accomplished only when the job has notes, so
+    # every other job's prompt is unchanged. A note that only says no or stop never makes undone work done.
+    DecisionPoint("job.accomplished.noted",
+                  "Does the assistant's final answer say the task's goal was achieved, rather than that it "
+                  "was blocked, refused, expired, is waiting on the user, or was only partly done? user_notes are "
+                  "what the user said when declining a step during the work. A note that asks for the work to be "
+                  "done another way changes the goal: doing it that way counts as achieving it. A note that only "
+                  "refuses a step or says to stop or wait does not change the goal: then the goal still has to be "
+                  "achieved for a yes.",
+                  ("goal", "answer", "user_notes"), "active", 0.7, after_turn=True),
     # 0.1.56 §4.3 "you said": active, after the user's own turn in a project conversation. The
     # gate runs once per turn; only on its yes is each open checkpoint (and the condition) asked.
     # A yes ticks a checkpoint (undoable) or proposes the level clear (the user decides).

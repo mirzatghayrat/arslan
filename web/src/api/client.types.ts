@@ -349,6 +349,7 @@ export interface AppSettings {
   lan_discovery_enabled?: string; // "true" | "false"
   ssh_enabled?: string; // "true" | "false"
   default_read_enabled?: string; // "true" | "false" (default-ON: absent = on)
+  goal_mode?: string; // L7: "true" turns /goal on (default off)
   folder_rules_enabled?: string; // K10-1: "true" | "false" (default-ON: absent = on)
   sandbox_system_certificates?: string; // SBX settings: "true" | "false" (default off)
   sandbox_allowed_sites?: string; // NET-b: a JSON list of host strings ("" = none); the server refuses a public suffix
@@ -525,6 +526,23 @@ export type JobOutcome = "done" | "partial" | "blocked" | "stopped" | "interrupt
 /** 0.1.43: which limit ended a job, when one did. */
 export interface JobBudgetStop { reason: string; used: number | null; limit: number | null; tier?: string }
 export interface JobCriterion { id: string; description: string; status: string }
+/** L7-6: a goal's card state, the `goal_state` key on a goal's `job_update` only (docs/plans/0164/L7-goal-mode.md,
+ *  UI, "The frame"). Absent from every other job's frame. */
+export type GoalStatus = "not_started" | "active" | "paused" | "blocked" | "budget_limited" | "interrupted" | "review"
+  | "complete" | "cleared";
+export interface GoalReceipt { code: string; path: string | null; exit_code: number | null; count: number | null }
+export interface GoalCheckState {
+  id: string; description: string; kind: "file_saved" | "file_contains" | "sources_read" | "judgement" | "check";
+  status: string; receipt: GoalReceipt | null; flagged: boolean; user_confirmed: boolean; outputs: string[];
+}
+export interface GoalState {
+  status: GoalStatus; round: number; met: number; total: number;
+  // L7-5h: a newer goal took over from this one while it waited; it is kept as it was, and its buttons name its id.
+  left?: boolean;
+  spend_usd: number | null; cap_usd: number | null; tier: "lean" | "standard" | "ample";
+  blocker: { code: "no_progress" | "protected_changed" | "unprotected" | "user_checks" | "budget"; files: string[] } | null;
+  step: string | null; unprotected: boolean; missing_files: string[]; checks: GoalCheckState[];
+}
 export interface JobCard {
   jobId: string;
   goal: string;
@@ -534,6 +552,7 @@ export interface JobCard {
   detail: string;
   budget?: JobBudgetStop | null;
   criteria: JobCriterion[];
+  goalState?: GoalState;
 }
 
 /** D1 (0.1.55): one thing Arslan noticed and remembered (or wants to) after a turn. */
@@ -807,6 +826,8 @@ export type ArslanServerMessage =
   // S3-M2 reattach: sent between the history push and the journal replay when the
   // conversation has an in-flight run — arms the stop button before any stream frame.
   | { type: "run_in_progress"; run_id: number }
+  // L7-5h: `/goal` is drafting its checks (one model request, which can take minutes). The run's own stop cancels it.
+  | { type: "goal_drafting"; run_id?: number }
   // stream_end may carry an HTML deliverable packaged by the backend spawn-output
   // exit (HX-2): {kind:"html", filename, title, bytes, complete, content}. It rides
   // the SAME frame the store turns into the chat item. 🔒 Backend only.
@@ -846,7 +867,7 @@ export type ArslanServerMessage =
   | { type: "card_resolved"; call_id: string; outcome: "approved" | "declined" | "expired"; by?: "phone" | "mac" | "inbox" | "island" }
   | { type: "job_update"; job_id: string; conversation_id: string; goal: string;
       phase: "queued" | "running" | "finished"; step: string; outcome: JobOutcome | null;
-      detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[] }
+      detail: string; budget?: JobBudgetStop | null; criteria: JobCriterion[]; goal_state?: GoalState }
   | { type: "job_spoken"; job_id: string; outcome: JobOutcome | null; goal: string }
   | { type: "tool_call"; tool: string; args_summary: string }
   | {

@@ -29,6 +29,8 @@ DAYS = 7
 TASK_CAP = 50
 TITLE_MAX = 80
 CACHE_SECONDS = 60
+# L7-5f: a job the user steered on its cards is judged as job.accomplished.noted; both answer "was the goal reached".
+ACCOMPLISHED = ("job.accomplished", "job.accomplished.noted")
 #: Who had a card in front of them: the person, or nobody in time (§A8). Not a rule, a grant, the
 #: floor, or "away" (a card that never opened).
 ASKED = ("user", "expired")
@@ -154,7 +156,7 @@ async def _tasks(db: AsyncSession, rows: list[CompanionTask]) -> list[dict]:
     # confident no turned its done into blocked (background_jobs._goal_not_reached). The newest per job.
     verdicts = {ref: (verdict, probability) for ref, verdict, probability in (await db.execute(
         select(Judgment.ref, Judgment.verdict, Judgment.probability)
-        .where(Judgment.point == "job.accomplished", Judgment.ref.in_(ids)).order_by(Judgment.id))).all()}
+        .where(Judgment.point.in_(ACCOMPLISHED), Judgment.ref.in_(ids)).order_by(Judgment.id))).all()}
     out = []
     for row in rows:
         spec = specs.get((row.id, row.spec_revision)) or {}

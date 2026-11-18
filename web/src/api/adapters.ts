@@ -92,6 +92,8 @@ export function toUiSettings(backend: BackendAppSettings): Omit<AppSettings, "th
     defaultReadEnabled: backend.default_read_enabled !== "false",
     // K10-1: a folder's rules, default on like reading; the switch's UI comes with L11-0.
     folderRulesEnabled: backend.folder_rules_enabled !== "false",
+    // L7: goal mode, default off until the bench decides; only an explicit "true" turns it on.
+    goalMode: backend.goal_mode === "true",
     // Voice output — default OFF (opt-in; not everyone wants their machine talking).
     // Empty means "follow the interface language" — resolved at the call site,
     // not stored, so changing the UI language moves it too.
@@ -153,6 +155,7 @@ const SETTINGS_WIRE: Record<string, { key: keyof BackendAppSettings; to?: (v: un
   sshEnabled: { key: "ssh_enabled", to: (v) => (v ? "true" : "false") },
   defaultReadEnabled: { key: "default_read_enabled", to: (v) => (v ? "true" : "false") },
   folderRulesEnabled: { key: "folder_rules_enabled", to: (v) => (v ? "true" : "false") },
+  goalMode: { key: "goal_mode", to: (v) => (v ? "true" : "false") },
   voiceInputLocale: { key: "voice_input_locale", to: (v) => String(v) },
   voiceMode: { key: "voice_mode", to: (v) => String(v) },
   voiceEndpointSilenceMs: { key: "voice_endpoint_silence_ms", to: (v) => String(v) },

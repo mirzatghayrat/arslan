@@ -7,7 +7,7 @@ counts from its own start):
   交周报       tomorrow 09:00; a run started between 00:00 and 05:59 may also mean this morning
                (「明早」 said at 00:30), both readings accepted
   买牛奶       Friday — the coming Friday, or today if today is Friday (both readings accepted)
-  给房东打电话 next Monday (the Monday of next week; any time or all-day)
+  给房东打电话 next Monday (the Monday of next week; on a Sunday also the Monday after; any time or all-day)
 """
 from __future__ import annotations
 
@@ -50,10 +50,13 @@ def expected_dates(today: dt.date, *, small_hours: bool = False) -> dict[str, se
     friday = today + dt.timedelta(days=(4 - today.weekday()) % 7)        # today if Friday
     fridays = {friday} | ({friday + dt.timedelta(days=7)} if friday == today else set())
     monday = today + dt.timedelta(days=7 - today.weekday())              # Monday of next week
+    # 「下周一」 said on a Sunday may mean tomorrow (the week starts on Monday) or the Monday after (the week starts on
+    # Sunday): both accepted (④参谋, 11-17: every L7 base/off T1 run started on a Sunday and was marked wrong for 11-23).
+    mondays = {monday} | ({monday + dt.timedelta(days=7)} if today.weekday() == 6 else set())
     # U10's reruns started after midnight: Arslan read 「明早 9 点」 at 00:2x as 09:00 that same day
     # and scored 2. Before 06:00 both this morning and the next are fair readings.
     report = {today + dt.timedelta(days=1)} | ({today} if small_hours else set())
-    return {"report": report, "milk": fridays, "landlord": {monday}}
+    return {"report": report, "milk": fridays, "landlord": mondays}
 
 
 def check(list_name: str, reply_text: str = "", *, started: dt.datetime | None = None,

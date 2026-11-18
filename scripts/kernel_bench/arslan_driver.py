@@ -168,6 +168,10 @@ class TurnTracker:
     goal_quiet_s: float = GOAL_QUIET_S
     heard: bool = False
     goal_found: dict = field(default_factory=lambda: {"seen": False, "flagged": set(), "round": None, "status": None})
+    # L7-5f: a goal's answer is its job's last `message` (it carries the job_id), sent when the job finishes. The
+    # Start turn's own streamed text is only the host's "Goal started as a background job" line, which no check can
+    # score (L7-7 T10: right answers scored 0). Only goal turns use it, so a plain turn's answer is unchanged.
+    job_reply: str | None = None
 
     def start_turn(self, now: float, *, goal_turn: bool = False, expect_job: bool = False) -> None:
         self.turn_started, self.first_chunk_at, self.stream_end_at = now, None, None
@@ -219,8 +223,14 @@ class TurnTracker:
                 # its outcome (server/services/background_jobs.py outcome_of).
                 if frame.get("outcome") not in (None, "done"):
                     self.end_reason = f"job_{frame.get('outcome')}"
+            elif (frame.get("goal_state") or {}).get("status") == "not_started":
+                # L7-6 (a): a drafted goal shows as a queued job_update that waits for Start, so it never finishes
+                # by itself. It must not hold the `/goal` turn open; Start's own job is awaited after GOAL_START.
+                self.jobs_open.discard(job)
             else:
                 self.jobs_open.add(job)
+        elif t == "message" and frame.get("job_id") and self.goal_turn:
+            self.job_reply = frame.get("content") or ""
         elif t == "tool_call" and frame.get("tool") == "run_command":
             self.run_commands += 1
         elif t == "propose_run_command":
@@ -309,10 +319,10 @@ class TurnTracker:
 
     def next_turn(self, now: float) -> str:
         """Close this turn and start the next; returns this turn's answer."""
-        answer = "".join(self.final_text)
+        answer = self.job_reply if self.job_reply is not None else "".join(self.final_text)
         self.timings.append({key: None if at is None else round(at - self.turn_started, 2)
                              for key, at in (("first_chunk_s", self.first_chunk_at), ("stream_end_s", self.stream_end_at))})
-        self.final_text, self.turn_done, self.last_activity = [], False, now
+        self.final_text, self.turn_done, self.last_activity, self.job_reply = [], False, now, None
         return answer
 
 

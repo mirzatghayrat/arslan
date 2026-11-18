@@ -240,17 +240,18 @@ async def _synthesize_from_findings(a, system: str, user_content: str, tool_trac
 _CHAT_TIMEOUT_S = 75.0  # per model call — DeepSeek's API can be slow and occasionally stalls.
 
 
-async def _chat_retry(a, system: str, user: str, *, history=None, tools=None):
-    """One bounded retry for known transient transport failures, never for denial."""
-    return await _with_retry(lambda: a.chat(system, user, history=history, tools=tools))
+async def _chat_retry(a, system: str, user: str, *, history=None, tools=None, timeout: float = _CHAT_TIMEOUT_S):
+    """One bounded retry for known transient transport failures, never for denial. `timeout`: per call (L7-5e: a
+    goal's judge, a reasoning model's verdict, takes longer than a chat step)."""
+    return await _with_retry(lambda: a.chat(system, user, history=history, tools=tools), timeout=timeout)
 
 
-async def _with_retry(request):
+async def _with_retry(request, *, timeout: float = _CHAT_TIMEOUT_S):
     last: Exception | None = None
     from arslan.execution_budget import BudgetExceeded
     for attempt in range(2):
         try:
-            return await within(request(), timeout=_CHAT_TIMEOUT_S)
+            return await within(request(), timeout=timeout)
         except BudgetExceeded:
             from server.services.task_service import current as current_task
             if current_task():

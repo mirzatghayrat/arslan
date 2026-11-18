@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from uuid import uuid4
 
-from pydantic import Field
+from pydantic import Field, model_serializer
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError, OperationalError
 
@@ -23,6 +23,7 @@ from arslan.companion.contracts import (
 )
 from arslan.execution_budget import Budget
 from server.db import session as db_session
+from server.services.goal_mode import GoalProgress, GoalSpec
 from server.db.models import (
     CompanionTask, Project, Run, TaskAction, TaskAttempt, TaskCheckpoint, TaskEvent, TaskRevision,
 )
@@ -42,6 +43,16 @@ class Progress(Contract):
     continuation_ref: ResourceRef | None = None
     loop_fingerprints: tuple[Identifier, ...] = Field(default=(), max_length=256)
     validation_repairs: tuple[Identifier, ...] = Field(default=(), max_length=2)
+    # L7 goal mode: the rounds' record, written with each verdict (turn_answer.finish, L7-2).
+    goal: GoalProgress | None = None
+
+    @model_serializer(mode="wrap")
+    def _no_goal_no_key(self, handler):
+        # With no goal a checkpoint, and the resumed turn's recovery text, stay byte for byte as before L7.
+        data = handler(self)
+        if self.goal is None:
+            data.pop("goal", None)
+        return data
 
 
 def encoded_action(tool_key: str, arguments: dict) -> str:
@@ -62,6 +73,19 @@ def encoded_action(tool_key: str, arguments: dict) -> str:
 def action_digest(tool_key: str, arguments: dict, effect: str, action_id: str) -> str:
     digest = hashlib.sha256(encoded_action(tool_key, arguments).encode()).hexdigest()
     return hashlib.sha256((digest + action_id).encode()).hexdigest() if effect == "read" else digest
+
+
+def _recorded_check(row, tool_key: str, arguments: dict) -> bool:
+    """L7-5: these arguments are exactly the host's run of a `check:` line recorded at Start on this goal row."""
+    import shlex
+    privacy = row.privacy or {}
+    if tool_key != "run_command" or privacy.get("driver") != {"kind": "background", "goal": True}:
+        return False
+    try:
+        checks = GoalSpec.model_validate(privacy["goal_spec"]).checks
+    except (KeyError, ValueError):
+        return False
+    return any(check.kind == "check" and arguments == {"command": shlex.join(check.argv)} for check in checks)
 
 
 def identity() -> str:
@@ -243,6 +267,62 @@ class TaskRepository:
         })
         return await self.present(row)
 
+    async def park_goal(self, task_id: str, goal_spec: dict, *, owner_id="local") -> dict:
+        """L7-3: a goal row waits for Start ("not started"): just created, or its checks revised before Start. Its
+        spec rides beside its driver; nothing runs until `start`."""
+        row = await self.get(task_id, owner_id=owner_id)
+        if (row.privacy or {}).get("driver") != {"kind": "background", "goal": True} or not (
+                row.phase == "queued" or (row.phase == "waiting_user"
+                                          and row.pause_reason in {"goal_not_started", "goal_changed"})):
+            raise TaskError("task_cannot_start")
+        await self._advance(row, "goal_not_started", changes={
+            "phase": "waiting_user", "pause_reason": "goal_not_started",
+            "privacy": {**row.privacy, "goal_spec": goal_spec}})
+        return await self.present(row)
+
+    async def resume_goal(self, task_id: str, expected_version: int, *, owner_id="local") -> int:
+        """L7-4: the goal's own Resume, before its `start`. Only a goal row its rounds or a restart left waiting (or a
+        failed one), never one that isn't started (Q0: that waits for Start). It gets a fresh budget of its own tier
+        and cap, never a raised one (Q3, Q4). Returns the row's new version."""
+        from arslan.execution_budget import run_budget
+        row = await self.get(task_id, owner_id=owner_id)
+        if row.version != expected_version:
+            raise TaskError("task_version_conflict")
+        if (row.privacy or {}).get("driver") != {"kind": "background", "goal": True} or "goal_spec" not in row.privacy \
+                or row.phase not in {"waiting_user", "failed"} or row.pause_reason in {"goal_not_started", "goal_changed"}:
+            raise TaskError("task_cannot_start")
+        goal = GoalSpec.model_validate(row.privacy["goal_spec"])
+        await self._advance(row, "goal_resumed", changes={
+            "budget": run_budget(goal.tier, usd_cap=goal.usd_cap).snapshot()})
+        return row.version
+
+    async def pause_goal(self, task_id: str, *, owner_id="local") -> None:
+        """L7-6: `/goal pause`: the goal's job was stopped (its row cancelled); the row waits as paused instead, which
+        the goal's Resume re-queues. Only a goal row, and only one that stop left cancelled."""
+        row = await self.get(task_id, owner_id=owner_id)
+        if (row.privacy or {}).get("driver") != {"kind": "background", "goal": True} or row.phase != "cancelled":
+            raise TaskError("task_cannot_pause")
+        await self._advance(row, "goal_paused", changes={
+            "phase": "waiting_user", "pause_reason": "goal_paused", "cancel_requested": False})
+
+    async def leave_goal(self, row: CompanionTask, new_task_id: str) -> None:
+        """L7-5h: a new goal took over from this one, which wasn't running. Only a mark and an event: its phase, stop
+        reason, spec and checkpoints stay as they were, so it can still be resumed, started or accepted by its id.
+        `row` is the row as the command read it: one that changed since (a Start, a stop) raises
+        task_version_conflict, and the new goal is not written either."""
+        current = await self.get(row.id, owner_id=row.owner_id)       # the caller read a goal row waiting, not running
+        if current.version != row.version:
+            raise TaskError("task_version_conflict")
+        await self._advance(current, "goal_left", changes={"privacy": {**current.privacy, "goal_left_for": new_task_id}},
+                            payload={"left_for": new_task_id})
+
+    async def mark_goal_posted(self, task_id: str, *, owner_id="local") -> None:
+        """L7-4: the goal's result for this attempt is posted; the boot pass posts a succeeded one that isn't."""
+        row = await self.get(task_id, owner_id=owner_id)
+        if (row.privacy or {}).get("driver") == {"kind": "background", "goal": True}:
+            await self._advance(row, "goal_posted", changes={
+                "privacy": {**row.privacy, "goal_posted": row.attempt_id}})
+
     async def link_run(self, task_id: str, attempt_id: str, run_id: int):
         row = await self._active(task_id, attempt_id)
         run = await self.db.get(Run, run_id)
@@ -337,8 +417,13 @@ class TaskRepository:
             raise TaskError("task_not_awaiting_acceptance")
         spec = await self.spec(row)
         previous = {result.check_id: result for result in map(CheckResult.model_validate, row.results)}
-        if not any(check.evaluator == "human" for check in spec.acceptance) or any(
-            check.evaluator != "human" and (check.id not in previous or not (
+        # L7-5e: a goal's checks the judge gave no verdict on are the user's to accept, as its human ones are.
+        goal = ((await self.latest_checkpoint(row.id, owner_id=owner_id)) or {}).get("progress", {}).get("goal") or {}
+        unjudged = {check.id for check in spec.acceptance if check.evaluator == "model"
+                    and check.id in set(goal.get("unjudged") or ())}
+        yours = {check.id for check in spec.acceptance if check.evaluator == "human"} | unjudged
+        if not yours or any(
+            check.id not in yours and (check.id not in previous or not (
                 previous[check.id].status == "passed" or (previous[check.id].status == "not_applicable"
                     and not check.critical and check.rule is not None and check.rule.when == "artifacts_present")))
             for check in spec.acceptance):
@@ -363,8 +448,8 @@ class TaskRepository:
         review_id = f"human-review:{identity()}"
         proof = ResourceRef(id=review_id, kind="document", revision=1,
                             locator=f"/api/v1/tasks/{row.id}/events?after={row.sequence}")
-        results = tuple(CheckResult(check_id=check.id, evaluator="human", status="passed", evidence=(proof,))
-                        if check.evaluator == "human" else previous[check.id] for check in spec.acceptance)
+        results = tuple(CheckResult(check_id=check.id, evaluator=check.evaluator, status="passed", evidence=(proof,))
+                        if check.id in yours else previous[check.id] for check in spec.acceptance)
         TaskState(task_id=row.id, spec_revision=row.spec_revision, run_id=row.attempt_id,
                   sequence=row.sequence + 1, phase="succeeded", results=results,
                   updated_at=datetime.now(timezone.utc)).validated_for(spec)
@@ -390,7 +475,7 @@ class TaskRepository:
                 "cursor": cursor, "has_more": cursor < row.sequence}
 
     async def prepare_action(self, task_id: str, attempt_id: str, *, tool_key: str,
-                             arguments: dict, effect: str) -> dict:
+                             arguments: dict, effect: str, host_check: bool = False) -> dict:
         row = await self._active(task_id, attempt_id)
         if effect not in {"read", "local_write", "external_write", "destructive"}:
             raise TaskError("task_invalid_effect")
@@ -407,7 +492,13 @@ class TaskRepository:
             TaskAction.intent_hash == digest))
         # A known failure (0.1.59: a local command that exited with a code, a refused local write) may
         # be tried again — the user or the model fixed something. Only an unknown outcome is refused.
-        if previous and previous.status not in {"not_applied", "failed"}:
+        # L7-5 (reviewer decision): the host's own run of a goal's `check:` line may run again after it succeeded, so
+        # each verdict reads a fresh run. Only with `host_check` (set by `goal_checks` alone), and only when the
+        # arguments are exactly `{"command": shlex.join(argv)}` for an argv the row's goal spec recorded at Start: no
+        # prefix, no other argument, no normalising. An unknown outcome is still refused.
+        again = previous is not None and previous.status == "succeeded" and host_check and _recorded_check(
+            row, tool_key, arguments)
+        if previous and previous.status not in {"not_applied", "failed"} and not again:
             code = "task_action_already_completed" if previous.status == "succeeded" else "task_reconciliation_required"
             raise TaskError(code)
         if previous:
