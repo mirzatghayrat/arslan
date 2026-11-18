@@ -102,8 +102,11 @@ def hint_for(tool_key: str, result: dict) -> str | None:
     if result.get("ok"):
         return None
     text = " ".join(str(result.get(k) or "") for k in ("error", "stderr", "stdout", "summary"))
-    if result.get("kept_for_comment") and result.get("sandbox") in ("workspace", "outside") and (
-            _SANDBOX_APPLE_EVENTS.search(text) or _SANDBOX_OSA_COMPILE.search(text)):
+    # #1001 review L3: a compile error only in the command sandbox, as the compile hint below (the outside wrapper's
+    # Standard Additions were not measured); an Apple Events refusal in either, as the hints after it.
+    if result.get("kept_for_comment") and (
+            (result.get("sandbox") in ("workspace", "outside") and _SANDBOX_APPLE_EVENTS.search(text))
+            or (result.get("sandbox") == "workspace" and _SANDBOX_OSA_COMPILE.search(text))):
         return KEPT_FOR_COMMENT_HINT
     if result.get("sandbox") in ("workspace", "outside") and _SANDBOX_APPLE_EVENTS.search(text):
         return KEPT_WRAPPED_HINT if result.get("kept_wrapped") else SANDBOX_APPLE_EVENTS_HINT

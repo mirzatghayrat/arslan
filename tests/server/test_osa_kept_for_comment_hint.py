@@ -87,6 +87,19 @@ def test_t1_r2_is_kept_wrapped_only_for_its_comments():
     "osascript -e 'tell application \"Finder\" to get name of startup disk'",
     # Not an inline osascript.
     "osascript add_reminders.applescript",
+    # #1001 review MF1: a `#` or `--` inside a string is the user's text, not a comment.
+    "osascript -e 'tell application \"Reminders\" to make new reminder with properties {name:\"#work call\"}'",
+    "osascript -e 'set n to \"a -- b\"' -e 'tell application \"Reminders\" to make new reminder with properties {name:n}'",
+    # An escaped quote does not end the string, so the `--` after it is still the user's text.
+    "osascript -e 'tell application \"Reminders\" to make new reminder with properties {name:\"say \\\" -- hi\"}'",
+    # ... and with a real comment too: dropped, the string's `#` still keeps it wrapped, so the hint would be false.
+    "osascript -e 'tell application \"Reminders\" to make new reminder with properties {name:\"#tag\"} -- add'",
+    # #1001 review L1: a quote inside a comment shifts the pairing; read string-aware, the app is not a literal.
+    "osascript -e 'tell application \"Reminders\" to count lists' -e '--\"' -e 'tell application someVar to count' -e '--\"'",
+    # #1001 review L2: each other condition still holds once the comment is gone.
+    "osascript -e 'tell application \"Calendar\" to save -- x'",
+    "osascript -e 'tell application \"Reminders\" of machine \"m\" to count lists -- x'",
+    "osascript -e 'set f to application\"Finder\" -- x' -e 'tell application \"Reminders\" to count lists'",
 ])
 def test_a_script_kept_wrapped_for_another_reason_is_not_put_down_to_its_comment(command):
     assert task_service.unwrapped_once(command) is False
@@ -103,6 +116,24 @@ def test_the_hint_names_the_comments_and_says_to_retry_without_them(stderr):
     hint = hint_for("run_command", _failed(stderr, kept_wrapped=True, kept_for_comment=True))
     assert hint == KEPT_FOR_COMMENT_HINT
     assert re.search(r"\bcomments?\b", hint) and "without" in hint and "--" in hint
+
+
+@pytest.mark.parametrize("command", [
+    "osascript -e 'tell application \"Reminders\" to count lists -- how many'",
+    "osascript -e 'tell application \"Reminders\" to count lists # how many'",
+    "osascript -e 'tell application \"Reminders\" to make new reminder with properties {name:\"ab\"} -- a \"quote'",
+])
+def test_a_real_comment_outside_strings_is_the_reason(command):
+    assert task_service.unwrapped_once(command) is False and task_service.kept_for_comment(command) is True
+
+
+def test_the_outside_wrappers_compile_error_gets_no_comment_hint():
+    """#1001 review L3: like the compile hint, only in the command sandbox (the outside wrapper was not measured)."""
+    result = _failed(COMPILE_2741, kept_wrapped=True, kept_for_comment=True)
+    result["sandbox"] = "outside"
+    assert hint_for("run_command", result) is None
+    result["stderr"] = REFUSED_1728
+    assert hint_for("run_command", result) == KEPT_FOR_COMMENT_HINT
 
 
 @pytest.mark.parametrize("stderr,expected", [(COMPILE_2741, SANDBOX_OSA_COMPILE_HINT), (REFUSED_1728, KEPT_WRAPPED_HINT)])

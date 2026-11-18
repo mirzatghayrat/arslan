@@ -470,16 +470,47 @@ def unwrapped_once(command: str) -> bool:
 
 
 def kept_for_comment(command: str) -> bool:
-    """An inline osascript that `unwrapped_once` keeps wrapped only because of a `--` or `#` comment: the same
-    check with that one condition left out passes. The recovery hint uses it to say why (0.1.64 pre-tag, L7-7 T1 r2);
-    the decision itself is unchanged."""
+    """An inline osascript that `unwrapped_once` keeps wrapped only because of its `--` or `#` comments: it has a
+    comment outside its strings, and the same script with those comments removed would itself run bare. The recovery
+    hint uses it to say why (0.1.64 pre-tag, L7-7 T1 r2). It only answers that question: what runs is the command as
+    given, judged by `unwrapped_once` as before (stripping before the check is a 0.1.65 item, docs/plans).
+    #1001 review MF1: a `--` or `#` inside a string is not a comment, so `{name:"#work call"}` is not this case."""
     script = _inline_osascript(command)
-    return (script is not None and bool(_OSA_COMMENT.search(script))
-            and _plain_osascript(script, comments_ok=True))
+    if script is None:
+        return False
+    stripped = _without_line_comments(script)
+    return stripped != script and _plain_osascript(stripped)
 
 
-def _plain_osascript(script: str, *, comments_ok: bool = False) -> bool:
-    """`unwrapped_once` for an inline osascript. `comments_ok` only serves `kept_for_comment`."""
+def _without_line_comments(script: str) -> str:
+    """`script` with each `--` or `#` comment removed up to its line's end, reading strings the way AppleScript does
+    (a backslash escapes the next character inside one): a comment marker inside a string is text, and a quote inside a
+    comment pairs with nothing. `(* … *)` blocks are left as they are; `unwrapped_once` judges what is left."""
+    out, i, in_string = [], 0, False
+    while i < len(script):
+        ch = script[i]
+        if in_string:
+            out.append(ch)
+            if ch == "\\" and i + 1 < len(script):
+                out.append(script[i + 1])
+                i += 1
+            elif ch == '"':
+                in_string = False
+        elif ch == '"':
+            in_string = True
+            out.append(ch)
+        elif ch == "#" or script.startswith("--", i):
+            end = script.find("\n", i)
+            i = len(script) if end < 0 else end
+            continue
+        else:
+            out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _plain_osascript(script: str) -> bool:
+    """`unwrapped_once` for an inline osascript."""
     from server.services.hands_service import never_touched, script_apps, script_kind
     if any(never_touched(app) for app in script_apps(script)):
         return False                         # Hands' never-list holds for scripts too, before script_kind
@@ -497,7 +528,7 @@ def _plain_osascript(script: str, *, comments_ok: bool = False) -> bool:
             and bool(apps) and all(_runs_bare_for(app) for app in apps) and not _KEEP_WRAPPED_WORDS.search(script)
             and not _OSA_APP_NOT_LITERAL.search(_OSA_STRING.sub('""', script))
             and not _OSA_REMOTE.search(_OSA_STRING.sub('""', script))           # #984 review: another Mac's app
-            and (comments_ok or not _OSA_COMMENT.search(script))
+            and not _OSA_COMMENT.search(script)
             and all(_runs_bare_for(name) for name in _OSA_APP_LITERAL.findall(script)))
 
 

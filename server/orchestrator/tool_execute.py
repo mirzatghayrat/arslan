@@ -139,8 +139,7 @@ async def run_executor(tool_key, args, executor, plan: command_gate.CommandPlan,
             result["ran_outside_sandbox"] = True
         if tool_key == "run_command" and kept_wrapped and isinstance(result, dict):
             result["kept_wrapped"] = True      # the hint names mac_applescript (recovery_hints)
-            from server.services import task_service
-            if task_service.kept_for_comment(command or ""):
+            if plan.kept_for_comment:
                 result["kept_for_comment"] = True   # only its comments kept it wrapped: the hint says so
         if tool_key == "run_command" and network.get("note") and isinstance(result, dict):
             result["network_note"] = " ".join(filter(None, (network["note"], result.get("network_note"))))

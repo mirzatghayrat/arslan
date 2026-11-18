@@ -443,6 +443,7 @@ class CommandPlan:
     sandbox_on: bool = False
     unwrapped: bool = False         # an approved Apple Events or Shortcuts call runs bare
     kept_wrapped: bool = False
+    kept_for_comment: bool = False  # kept wrapped only for its comments, outside a sub-session: the hint says so
     network: dict = field(default_factory=dict)     # {"offline", "note"} after outside content
     deletes_outside: bool = False
     confined: bool = False
@@ -599,9 +600,16 @@ class _Draft:
     network: dict = field(default_factory=dict)   # S2a-1 piece 2: {"offline", "note"} after outside content
     offline_reason: str = ""           # S2a-3 step 3: an unread command runs offline in the sandbox, with no card
 
+    def _kept_for_comment(self) -> bool:
+        """#1001 review MF2: in a sub-session even a plain script stays sandboxed (SUB5c, `_own_folder_holds`), so
+        there dropping the comments would change nothing and the hint must not promise it."""
+        from server.services import task_service
+        return self.kept_wrapped and not self.own and task_service.kept_for_comment(self.command)
+
     def plan(self) -> CommandPlan:
         return CommandPlan(command=self.command, run_outside=self.run_outside, by_grant=self.by_grant,
                            sandbox_on=self.sandbox_on, unwrapped=self.unwrapped, kept_wrapped=self.kept_wrapped,
+                           kept_for_comment=self._kept_for_comment(),
                            network=self.network, deletes_outside=self.deletes_outside, confined=self.confined,
                            offline_reason=self.offline_reason,
                            holds_run_later=self.run_outside and self.by_grant and not self.clicked)
