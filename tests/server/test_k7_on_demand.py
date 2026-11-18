@@ -46,9 +46,9 @@ async def test_the_table_is_the_resident_tools_and_the_two_finders(mac_with_mcp)
     shown = {t["key"] for t in await arslan._arslan_tools()}
     reachable = {t["key"] for t in await arslan._callable_tools()}
     assert {"find_tools", "use_tool", "run_command", "start_background_work", "update_plan",
-            "list_my_capabilities", "web_search"} <= shown
+            "list_my_capabilities", "web_search", "attach_file"} <= shown
     assert not {k for k in shown if k.startswith("mcp_")}
-    assert {"schedule_task", "memory_note", "render_chart", "conversation_search", ISSUE, "attach_file",
+    assert {"schedule_task", "memory_note", "render_chart", "conversation_search", ISSUE,
             "browser_open", "background_status", "stop_background_work"} <= reachable - shown
     assert not on_demand.OWN & reachable
 
@@ -61,13 +61,15 @@ async def test_with_hands_on_the_whole_desktop_family_stays_resident(mac_with_mc
     print(f"\nK7 tool JSON, chat, Mac with Hands, 3 MCP servers: {rendered_tool_json_chars(tools):,} characters")
 
 
-async def test_a_file_for_the_user_is_one_search_away(mac_with_mcp):  # noqa: F811
-    """⓪Plan's condition for putting attach_file on demand: find_tools names it, and finds it first."""
-    assert "sending a file to the user" in on_demand.FIND_TOOLS["description"]
+async def test_a_file_for_the_user_needs_no_search(mac_with_mcp):  # noqa: F811
+    """v0.1.64 fix: attach_file is resident again. On demand it took find_tools then use_tool, and a model stopped
+    after the first hop with a screenshot unsent. The phone's note no longer sends the model to find_tools."""
+    assert "attach_file" in arslan.RESIDENT
     shown = {t["key"] for t in await arslan._arslan_tools()}
+    assert "attach_file" in shown
     unseen = [t for t in await arslan._callable_tools() if t["key"] not in shown]
-    assert on_demand.find("send file", unseen, _params)["tools"][0]["name"] == "attach_file"
-    assert "find_tools" in arslan.PHONE_NOTE
+    assert "attach_file" not in {t["key"] for t in unseen}
+    assert "attach_file" in arslan.PHONE_NOTE and "find_tools" not in arslan.PHONE_NOTE
 
 
 def test_the_finders_have_parameter_tables_under_k5s_rules():

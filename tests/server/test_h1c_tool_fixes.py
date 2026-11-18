@@ -162,8 +162,8 @@ def test_the_prompts_route_matches_the_tool_table():
     """The promise: use_tool can reach both tools, and neither is resident (so the old bare 'call' had no listed tool)."""
     assert "my_status" not in arslan.RESIDENT and "whats_new" not in arslan.RESIDENT
     assert "use_tool" in answer_rules.WORK_SELF_FROM_LIVE_SOURCES
-    # attach_file: the prompt names it only in the phone note, which already says how to find it
-    assert "attach_file" not in arslan._ANSWER_STABLE_PREFIX and "find_tools" in arslan.PHONE_NOTE
+    # attach_file: the prompt names it only in the phone note; it is resident again (v0.1.64 fix), so no search
+    assert "attach_file" not in arslan._ANSWER_STABLE_PREFIX and "attach_file" in arslan.RESIDENT
 
 
 async def test_the_turn_reads_the_switch_and_defaults_on(execution_db):
