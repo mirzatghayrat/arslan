@@ -181,6 +181,10 @@ public final class FrameMapper {
         case "job_update":
             if let job = frame["job_id"] as? String, let origin = frame["origin"] as? String { jobOrigins[job] = origin }
             if frame["phase"] as? String == "finished" { endTurn() }    // see `endsTurn`
+            // A goal that hasn't started (queued, with `goal_state`; `goal_command.frame_of`) has nothing running to
+            // finish it: as a job it would show the conversation working, with a Stop, until it starts. The phone has
+            // no not-started state, so it gets nothing until the goal runs (0.1.64 pre-tag, iOS note item 3).
+            if frame["phase"] as? String == "queued", frame["goal_state"] != nil { return [] }
             return [("job.event", Self.jobEvent(frame, conversationID: conversationID))]
         default:
             return []

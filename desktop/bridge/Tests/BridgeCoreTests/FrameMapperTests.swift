@@ -514,4 +514,23 @@ final class FrameMapperTests: XCTestCase {
         XCTAssertEqual(send.first?["source"] as? String, "phone")
         XCTAssertEqual(send.first?["type"] as? String, "user_message")
     }
+
+    /// A goal that hasn't started is sent as a queued `job_update` with `goal_state` (`goal_command.frame_of`, on
+    /// socket open and after /goal). Nothing runs to finish it, so mapped as a job it would show the conversation as
+    /// working, with a Stop, until the goal starts. The phone sees nothing of it; its card comes once it runs.
+    func testANotStartedGoalIsNotShownAsARunningJob() {
+        let m = FrameMapper(conversationID: "c1")
+        let goal: [String: Any] = ["type": "job_update", "job_id": "g1", "conversation_id": "c1", "goal": "Tidy",
+                                   "phase": "queued", "step": NSNull(), "origin": "mac",
+                                   "criteria": [["id": "1", "description": "a", "status": "pending"]],
+                                   "goal_state": ["status": "not_started", "checks": []]]
+        XCTAssertTrue(m.phoneMessages(for: goal).isEmpty)
+        // A plain queued job (no `goal_state`) and a running goal still go out as they did.
+        var plain = goal; plain["goal_state"] = nil; plain["job_id"] = "j2"
+        XCTAssertEqual(m.phoneMessages(for: plain).first?.body["state"] as? String, "running")
+        var running = goal; running["phase"] = "running"
+        XCTAssertEqual(m.phoneMessages(for: running).first?.body["state"] as? String, "running")
+        var paused = goal; paused["phase"] = "finished"; paused["outcome"] = "interrupted"
+        XCTAssertEqual(m.phoneMessages(for: paused).first?.body["state"] as? String, "stopped")
+    }
 }
