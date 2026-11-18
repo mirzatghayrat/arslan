@@ -101,20 +101,17 @@ FILES = (
 )
 
 # 0.1.63 D1: a file the user asked for reaches them, not just its Mac path. Offered with the read
-# tools, appended after every other built-in so no existing tool moves (the K3 / K7 rule).
+# tools, appended after every other built-in so no existing tool moves (the K3 / K7 rule). v0.1.64: resident
+# again (arslan.RESIDENT), so the text is kept short for K7's size bar: the size limits and the readable folders
+# are left to the executor, whose refusal names each one, and it keeps a title's extension itself.
 ATTACH_FILE = Tool("attach_file",
-                   "Attach an existing file to your answer so the user gets the file itself: a file card in the "
-                   "Mac window and the file on their iPhone. args: {path, title?} — absolute, ~/ or "
-                   "workspace-relative, in a readable folder; up to 20 MB a file, at most 32 files and 100 MB in "
-                   "all per answer (files saved with write_file count too). Use it whenever the user asks for a "
-                   "file (a screenshot, chart, export or document) instead of only naming its path. A screenshot "
-                   "must first be saved as a file (for example with screencapture); save a new capture under a "
-                   "new name, since the same call is not repeated.",
+                   "Send an existing file to the user with your answer (a file card on the Mac, the file on their "
+                   "iPhone). Use it whenever they ask for a file, a screenshot included, instead of naming its path. "
+                   "Save a screenshot to a file first, under a new name each time.",
                    {"type": "object", "properties": {
                        "path": {"type": "string", "minLength": 1,
-                                "description": "The file: absolute, ~/ or relative to the workspace, in a readable folder."},
-                       "title": {"type": "string", "maxLength": 200,
-                                 "description": "Optional name the user sees; the file's extension is kept."}},
+                                "description": "Absolute, ~/ or workspace-relative."},
+                       "title": {"type": "string", "maxLength": 200}},
                        "required": ["path"], "additionalProperties": False},
                    offered=_readable,
                    traits=Traits(effect="local_write", parallel=False, outside=False, saves=False))

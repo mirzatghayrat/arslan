@@ -631,8 +631,8 @@ async def _handle_answer(
 # 0.1.63 D1: a turn from the paired iPhone. A host fact in the status block, never the system prompt
 # (it stays byte-stable for the prompt cache, K3): a path on the Mac means nothing on the phone.
 PHONE_NOTE = ("The user is on their iPhone: a path on this Mac is no use to them. A file they ask for "
-              "(a screenshot, chart, export or document) reaches them only through attach_file (find it "
-              "with find_tools), under your answer.")
+              "(a screenshot, chart, export or document) reaches them only through attach_file, under your "
+              "answer.")
 #: ASK1-b (v0.1.64): a scheduled task's own fire runs commands that need no OK, in the sandbox; the model is told up
 #: front what is refused rather than finding out from a refusal.
 SCHEDULED_NOTE = ("This is a scheduled run and nobody is there to approve anything. run_command runs inside the "
@@ -680,7 +680,10 @@ QUICK_TOOLS = frozenset({"web_search", "web_extract", "recall", "conversation_se
 #: Short and sourced is said here, in the turn's own notes; the system prompt stays byte-stable (K3).
 QUICK_NOTE = ("This is a quick question from the user's iPhone: answer in a few sentences and name your sources "
               "(links) when you used the web. Here you can only search the web, read a page, and look in the "
-              "user's memory and earlier conversations.")
+              "user's memory and earlier conversations. When they ask for something that needs the computer "
+              "(a screenshot, a file, running something, acting on the Mac), say plainly that a quick ask can't do "
+              "that, and that they can start a new conversation from the phone's sidebar "
+              "(「新对话」, \"New conversation\" in English) or ask on the Mac.")  # the iPhone's own labels
 
 
 async def _quick_tools() -> list[dict]:
@@ -1142,14 +1145,15 @@ async def _skill_index(limit: int = 80) -> str:
 # to this table (server/orchestrator/on_demand.py). Chosen by 30 days of one user's calls (⓪Plan, Q2):
 # run_command 320, web 156, desktop_* 90, memory 47, jobs 29, list_my_capabilities 25, MCP 18,
 # ask_user_choice ~12, read_skill 9, browser_open/look 8; update_plan stays for K5's working method.
-# To keep a request under 12k characters (the master plan's K7 row; ⓪Plan chose A): attach_file, the
-# browser and a job's status and stop are found on demand too. find_tools names them.
+# To keep a request under 12k characters (the master plan's K7 row; ⓪Plan chose A): the browser and a
+# job's status and stop are found on demand too. find_tools names them. attach_file is resident again (v0.1.64
+# fix): on demand it took find_tools then use_tool, and a model stopped after the first hop with the file unsent.
 # With Hands on, the whole desktop family is resident: a Hands task is one long turn (Q1).
 # C3b's demotions (browser back/click/type/select/press, propose_capability) are here.
 RESIDENT = frozenset({
     "web_search", "web_extract", "read_file", "list_dir", "search_files", "write_file", "edit_file",
     "run_command", "update_plan", "ask_user_choice", "start_background_work", "recall", "remember",
-    "read_skill", "list_my_capabilities"})
+    "read_skill", "list_my_capabilities", "attach_file"})
 
 
 def _resident(key: str) -> bool:

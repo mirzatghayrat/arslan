@@ -56,7 +56,7 @@ CHAT_LISTED = {
     "attach_file", "mcp_1__lookup"}
 CHAT_SHOWN = {"web_search", "web_extract", "recall", "remember", "update_plan", "ask_user_choice",
               "start_background_work", *HANDS, "read_skill", "list_my_capabilities", "read_file", "list_dir",
-              "search_files", "write_file", "edit_file", "run_command"}
+              "search_files", "write_file", "edit_file", "run_command", "attach_file"}   # attach_file: v0.1.64 fix
 # What a case lists and shows besides its base: (listed +, listed -, shown +, shown -)
 NONE = (set(), set(), set(), set())
 BASE_CHANGES = {

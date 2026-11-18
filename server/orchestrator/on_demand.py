@@ -24,7 +24,7 @@ _CONVERSATIONS = 128
 _used: OrderedDict[str, list[str]] = OrderedDict()
 
 FIND_TOOLS = {"key": "find_tools", "description":
-    "Tools not in your list: sending a file to the user, browser, background jobs, overall progress, "
+    "Tools not in your list: browser, background jobs, overall progress, "
     "schedules, charts, memory, Mac automation, Hands, SSH, MCP, sub-sessions (split independent "
     "parts to run in parallel). Search in English keywords; call one with use_tool."}
 USE_TOOL = {"key": "use_tool", "description":

@@ -152,12 +152,11 @@ async def test_only_a_phone_turn_tells_the_model_a_mac_path_is_no_use(maker, mon
     await arslan.handle_user_message("c-d1", "send me a screenshot of my Mac", _events([]), source=source)
     first = model.seen[0]
     assert first["tools"] == sorted(first["tools"])                                        # K3: sorted by name
-    # K7: attach_file is reached on demand; the request carries find_tools, and the phone note says so
-    assert "find_tools" in first["tools"] and "attach_file" not in first["tools"]
-    assert "attach_file" in {t["key"] for t in await arslan._callable_tools()}
+    # v0.1.64 fix: attach_file is resident again (K7 had put it on demand), so the request carries it by name
+    assert "attach_file" in first["tools"]
     told = "on their iPhone" in str(first["user"])
     assert told is (source == "phone")
-    assert ("attach_file (find it with find_tools)" in str(first["user"])) is (source == "phone")
+    assert ("only through attach_file, under your answer" in str(first["user"])) is (source == "phone")
     assert "on their iPhone" not in first["system"]          # never the cached system prompt
 
 
