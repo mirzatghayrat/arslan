@@ -73,7 +73,9 @@ def tool_failure(result: dict) -> FailureKind | None:
 # ("app.py:12:34") and a value glued to a word out of it. Timestamps first, so their time part goes with them.
 _VOLATILE = (
     re.compile(r"\b\d{4}-\d{2}-\d{2}[T ]\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?"),
-    re.compile(r"(?<![\w.:/-])\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b"),
+    # An eslint position ("  12:34  error  ...": indented line start, line:col, severity word) is not a clock time.
+    re.compile(r"(?m)(?P<keep>^[ \t]+\d+:\d+(?=[ \t]+(?:error|warning|warn|info)\b))"
+               r"|(?<![\w.:/-])\d{1,2}:\d{2}(?::\d{2})?(?:\.\d+)?\b"),
     re.compile(r"(?<![\w.:/-])\d+(?:\.\d+)?\s?(?:ms|s|secs?|seconds|m|min)\b"),
     re.compile(r"\b0x[0-9a-fA-F]{6,}\b"),
 )
@@ -81,7 +83,7 @@ _VOLATILE = (
 
 def _stable(text: str) -> str:
     for pattern in _VOLATILE:
-        text = pattern.sub("#", text)
+        text = pattern.sub(lambda m: m.group(0) if m.groupdict().get("keep") else "#", text)
     return text
 
 
