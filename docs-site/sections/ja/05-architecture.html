@@ -41,6 +41,6 @@
 <p class="evidence">起動の詳細：{{source:packaging/server_entry.py|実行ファイル化したサービスの入口とポート方針}}；{{source:desktop/src-tauri/src/lib.rs|sidecar のハンドシェイクとパイプ管理}}；{{source:server/ws/arslan.py|WebSocket 接続}}。</p>
 <h3>旧設計と新設計：再利用を保ち、専門家への振り分けを終了する</h3>
 <div class="grid2"><div class="card"><span class="pill warn">過去の仕組み</span><h3>複数の専門家／Meta-Agent</h3><p>ユーザー → 前段の Router → Spawn を選択／作成 → 専門家が実行 → 集約。専門家のプロンプトは、ホールドアウト評価と人手による Promote の対象にできました。ユーザーには、専門家の役割、装備、一覧、進化の理解が求められました。</p></div><div class="card"><span class="pill">0.1.63 の主要経路</span><h3>One Arslan／統一ループ</h3><p>ユーザー → 共通の Agent loop → 必要に応じて Skill を読み込み、ツールを呼び出す → 結果を出力。通常の事実は回答後に抽出します。既存の専門家は Skill に変換でき、履歴も保持し、古い専門家が開始したタスクは、再開されると Arslan が引き継ぎます。専門家へのルーティングは主要な実行経路ではなくなっており、0.1.63 以降は、どの返信からも到達できなかった専門家時代のコード、進化とキュレーションの仕組み、調査レビューが削除されています。</p></div></div>
-<p class="note">「統一ループ」は「すべて逐次実行」や「委任しない」という意味ではありません。コードには、制約付きの読み取り専用 worker が残っています。これは、独立した人格、装備、進化、ルーティングを持つ初期の専門家システムとは異なります。</p>
+<p class="note">「統一ループ」は「すべて逐次実行」や「委任しない」という意味ではありません。モデルは、大きな作業のうち独立した一部をサブセッションに任せられます。これは、独立した人格、装備、進化、ルーティングを持つ初期の専門家システムとは異なります。</p>
 <p class="evidence">コードの入口：{{source:desktop/src-tauri/src/lib.rs|デスクトップシェルと sidecar のライフサイクル}}；{{source:server/orchestrator/arslan.py|統合エントリーポイント}}；{{source:server/orchestrator/tool_loop.py|実行ループ}}；{{source:docs/companion/ADR-001-native-runtime.md|Python のネイティブ実行コアを維持する決定}}；{{source:desktop/src-tauri/src/bridge.rs|Bridge プロセスの監視}}；{{source:server/ws/bridge.py|ローカル Bridge 制御チャネル}}；{{source:docs/specs/mobile-bridge-protocol.md|デバイス間プロトコル}}。</p>
 </section>
